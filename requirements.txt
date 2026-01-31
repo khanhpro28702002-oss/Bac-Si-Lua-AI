@@ -3,7 +3,8 @@ inference-sdk
 opencv-python-headless
 Pillow
 numpy
-gTTS
-fpdf
+gtts
 streamlit-js-eval
 requests
+google-generativeai
+python-dotenv
