@@ -38,93 +38,20 @@ if 'location' not in st.session_state:
     st.session_state['location'] = None
 
 # ==============================================================================
-# HÀM LẤY VỊ TRÍ NGƯỜI DÙNG (Browser Geolocation)
-# ==============================================================================
-
-def request_user_location():
-    """Gửi yêu cầu xin quyền truy cập vị trí từ trình duyệt"""
-    st.markdown("### 📍 Tự động lấy vị trí...")
-    
-    # HTML/JS để lấy tọa độ và gửi về Streamlit qua query params (hoặc callback)
-    # Ở đây dùng giải thuật đơn giản: JS lấy được thì chuyển hướng URL kèm tọa độ
-    # Hoặc dùng st.components để post message (phức tạp hơn)
-    # Cách đơn giản: Dùng thành phần HTML có nút "Cập nhật vị trí"
-    
-    loc_js = """
-    <script>
-    function getLocation() {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(showPosition, showError);
-      } else { 
-        window.parent.postMessage({type: 'location_error', error: "Trình duyệt không hỗ trợ Geolocation"}, "*");
-      }
-    }
-
-    function showPosition(position) {
-      const lat = position.coords.latitude;
-      const lon = position.coords.longitude;
-      window.parent.postMessage({
-        type: 'location_success',
-        lat: lat,
-        lon: lon
-      }, "*");
-    }
-
-    function showError(error) {
-      window.parent.postMessage({type: 'location_error', error: error.message}, "*");
-    }
-    
-    // Tự động gọi khi load
-    getLocation();
-    </script>
-    <div style="font-family: sans-serif; font-size: 12px; color: #666;">
-        Đang xác định vị trí...
-    </div>
-    """
-    
-    # Render component
-    components.html(loc_js, height=30)
-
-# Lắng nghe sự kiện từ JS (Lưu ý: Streamlit chính chủ không bắt được postMessage trực tiếp vào session_state dễ dàng
-# mà không qua custom component. Tôi sẽ dùng cách tiếp cận thực tế hơn cho Streamlit: st_javascript nếu có,
-# hoặc đơn giản là IP-based nếu browser geolocation quá khó trong môi trường này.
-# NHƯNG người dùng muốn "xin cấp quyền", nên tôi sẽ dùng 1 button JS.)
-
-# ==============================================================================
 # HÀM LẤY THÔNG TIN THỜI TIẾT THANH HÓA
 # ==============================================================================
 
-def lay_thoi_tiet(city="Can Tho", lat=None, lon=None):
+def lay_thoi_tiet(city="Can Tho"):
     """Lấy thông tin thời tiết từ API OpenWeatherMap"""
     try:
         api_key = "c7debdc7ac4deefb232ab3da884f152d"
-        
-        # 1. Kiểm tra nếu có tọa độ (phải là số hợp lệ)
-        try:
-            if lat and lon:
-                lat_float = float(lat)
-                lon_float = float(lon)
-                url = "http://api.openweathermap.org/data/2.5/weather"
-                params = {
-                    "lat": lat_float,
-                    "lon": lon_float,
-                    "appid": api_key,
-                    "units": "metric",
-                    "lang": "vi"
-                }
-                location_desc = f"Tọa độ ({lat}, {lon})"
-            else:
-                raise ValueError("Không có tọa độ")
-        except:
-            # 2. Nếu không có tọa độ, dùng tên thành phố
-            url = "http://api.openweathermap.org/data/2.5/weather"
-            params = {
-                "q": f"{city},VN",
-                "appid": api_key,
-                "units": "metric",
-                "lang": "vi"
-            }
-            location_desc = city
+        url = "http://api.openweathermap.org/data/2.5/weather"
+        params = {
+            "q": f"{city},VN",
+            "appid": api_key,
+            "units": "metric",
+            "lang": "vi"
+        }
             
         response = requests.get(url, params=params, timeout=5)
         
@@ -141,15 +68,11 @@ def lay_thoi_tiet(city="Can Tho", lat=None, lon=None):
                 "may": data['clouds']['all'],
                 "nguon": "🌍 Dữ liệu vệ tinh (Live)"
             }
-        elif response.status_code == 404:
-            st.error(f"❌ Không tìm thấy vị trí: {location_desc} (Lỗi 404)")
-        elif response.status_code == 401:
-            st.error("❌ API Key không hợp lệ hoặc đã hết hạn (Lỗi 401)")
         else:
-            st.error(f"⚠️ API Weather lỗi: {response.status_code}")
+            print(f"⚠️ API Weather lỗi: {response.status_code}")
             
     except Exception as e:
-        st.warning(f"⚠️ Lỗi kết nối Weather: {str(e)}")
+        print(f"⚠️ Lỗi kết nối Weather: {str(e)}")
     
     # Dữ liệu mặc định nếu API lỗi
     return {
@@ -1268,14 +1191,7 @@ def tim_tra_loi(cau_hoi):
     
     # Kiểm tra yêu cầu thời tiết
     if any(word in cau_hoi for word in ["thời tiết", "nhiệt độ", "độ ẩm", "mưa", "gió", "khí hậu"]):
-        params = st.query_params
-        lat = params.get("lat")
-        lon = params.get("lon")
-        
-        if lat and lon:
-            thoi_tiet = lay_thoi_tiet(lat=lat, lon=lon)
-        else:
-            thoi_tiet = lay_thoi_tiet()
+        thoi_tiet = lay_thoi_tiet()
             
         return f"""🌤️ **THÔNG TIN THỜI TIẾT {thoi_tiet['thanh_pho'].upper()}**
         
@@ -1449,33 +1365,11 @@ st.caption("Hệ thống chẩn đoán và tư vấn phòng trừ bệnh hại l
 # ==============================================================================
 # LẤY DỮ LIỆU THỜI TIẾT (Dùng chung cho cả trang)
 # ==============================================================================
-params = st.query_params
-lat = params.get("lat")
-lon = params.get("lon")
-
-if lat and lon:
-    thoi_tiet = lay_thoi_tiet(lat=lat, lon=lon)
-else:
-    thoi_tiet = lay_thoi_tiet(city="CanTho")
+thoi_tiet = lay_thoi_tiet(city="CanTho")
 
 # Hiển thị thời tiết ở sidebar
 with st.sidebar:
     st.markdown("### 🌤️ THỜI TIẾT")
-    
-    # Thành phần yêu cầu vị trí (ẩn bên dưới)
-    if st.button("📍 Cập nhật vị trí hiện tại"):
-        components.html("""
-            <script>
-            navigator.geolocation.getCurrentPosition(function(position) {
-                const lat = position.coords.latitude;
-                const lon = position.coords.longitude;
-                const url = new URL(window.parent.location.href);
-                url.searchParams.set('lat', lat);
-                url.searchParams.set('lon', lon);
-                window.parent.location.href = url.href;
-            });
-            </script>
-        """, height=0)
     
     st.markdown(f"""
     <div class="weather-box">
