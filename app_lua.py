@@ -1298,21 +1298,41 @@ DATA_HINH_ANH.update({
 def ve_bbox_voi_confidence(img, predictions):
     """Vẽ bounding box VÀ hiển thị tỉ lệ chính xác lên ảnh"""
     draw = ImageDraw.Draw(img)
+    width, height = img.size
+    
+    # Thử load font từ Windows hoặc linux, nếu không được dùng mặc định
     try:
-        font = ImageFont.truetype("arial.ttf", 24)
-        font_small = ImageFont.truetype("arial.ttf", 18)
+        # Đường dẫn font phổ biến trên Windows
+        font_path = "C:/Windows/Fonts/arial.ttf"
+        font = ImageFont.truetype(font_path, 24)
+        font_small = ImageFont.truetype(font_path, 18)
     except:
-        font = ImageFont.load_default()
-        font_small = ImageFont.load_default()
+        try:
+            # Dự phòng cho Linux/Docker
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+        except:
+            font = ImageFont.load_default()
+            font_small = ImageFont.load_default()
         
     # Vẽ cho tất cả predictions (tối đa 3)
     for i, pred in enumerate(predictions[:3]):
         conf = pred['confidence'] * 100
-        if conf < 40:  # Lọc độ tin cậy thấp
+        if conf < 30:  # Giảm ngưỡng để hiển thị nhiều hơn nếu cần
             continue 
         
         class_name = pred['class']
-        label = f"{class_name}"
+        # Lấy tên tiếng Việt nếu có
+        viet_name = DATA_HINH_ANH.get(class_name, {}).get('ten_viet')
+        if not viet_name:
+            # Kiểm tra ref
+            ref = DATA_HINH_ANH.get(class_name, {}).get('ref')
+            if ref:
+                viet_name = DATA_HINH_ANH.get(ref, {}).get('ten_viet', class_name)
+            else:
+                viet_name = class_name
+                
+        label = f"{viet_name}"
         confidence_label = f"{conf:.1f}%"
         
         # Tọa độ bounding box
@@ -1326,6 +1346,12 @@ def ve_bbox_voi_confidence(img, predictions):
         x1 = int(x + w/2)
         y1 = int(y + h/2)
         
+        # Đảm bảo box nằm trong ảnh
+        x0 = max(0, x0)
+        y0 = max(0, y0)
+        x1 = min(width, x1)
+        y1 = min(height, y1)
+        
         # Chọn màu theo độ tin cậy
         if conf >= 80:
             color = "#00ff00"  # Xanh lá - Tin cậy cao
@@ -1337,15 +1363,23 @@ def ve_bbox_voi_confidence(img, predictions):
         # Vẽ khung
         draw.rectangle([x0, y0, x1, y1], outline=color, width=4)
         
-        # Vẽ label (tên bệnh)
-        bbox_label = draw.textbbox((x0, y0-60), label, font=font)
-        draw.rectangle(bbox_label, fill=color)
-        draw.text((x0, y0-60), label, fill="black", font=font)
+        # Tính toán vị trí text (tránh bị tràn lên trên ảnh)
+        text_y = y0 - 55 if y0 > 60 else y1 + 5
         
-        # Vẽ confidence (tỉ lệ %) ngay dưới label
-        bbox_conf = draw.textbbox((x0, y0-35), confidence_label, font=font_small)
-        draw.rectangle(bbox_conf, fill="white")
-        draw.text((x0, y0-35), confidence_label, fill=color, font=font_small)
+        # Vẽ label (tên bệnh)
+        try:
+            bbox_label = draw.textbbox((x0, text_y), label, font=font)
+            draw.rectangle(bbox_label, fill=color)
+            draw.text((x0, text_y), label, fill="black", font=font)
+            
+            # Vẽ confidence (tỉ lệ %) ngay dưới label
+            conf_y = text_y + 28
+            bbox_conf = draw.textbbox((x0, conf_y), confidence_label, font=font_small)
+            draw.rectangle(bbox_conf, fill="white")
+            draw.text((x0, conf_y), confidence_label, fill=color, font=font_small)
+        except:
+            # Fallback nếu textbbox lỗi (với font default)
+            draw.text((x0, text_y), f"{label} {confidence_label}", fill=color)
         
     return img
 
