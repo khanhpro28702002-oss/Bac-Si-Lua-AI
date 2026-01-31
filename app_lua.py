@@ -3,6 +3,7 @@ from inference_sdk import InferenceHTTPClient
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 import requests
+import pandas as pd
 
 # Cấu hình trang
 st.set_page_config(page_title="Chuyên Gia Bệnh Lúa AI", page_icon="🌾", layout="wide")
@@ -36,18 +37,18 @@ if 'chat_messages' not in st.session_state:
 # HÀM LẤY THÔNG TIN THỜI TIẾT THANH HÓA
 # ==============================================================================
 
-def lay_thoi_tiet():
-    """Lấy thông tin thời tiết Thanh Hóa từ API OpenWeatherMap"""
+def lay_thoi_tiet(city="CanTho"):
+    """Lấy thông tin thời tiết từ API OpenWeatherMap"""
     try:
         # API key miễn phí (bạn nên đăng ký key riêng tại openweathermap.org)
-        api_key = "YOUR_API_KEY_HERE"  # Thay bằng key của bạn
-        city = "Thanh Hoa"
+        api_key = "c7debdc7ac4deefb232ab3da884f152d"  # Thay bằng key của bạn
         url = f"http://api.openweathermap.org/data/2.5/weather?q={city},VN&appid={api_key}&units=metric&lang=vi"
         
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             data = response.json()
             return {
+                "thanh_pho": data.get('name', city),
                 "nhiet_do": round(data['main']['temp'], 1),
                 "cam_giac": round(data['main']['feels_like'], 1),
                 "do_am": data['main']['humidity'],
@@ -61,6 +62,7 @@ def lay_thoi_tiet():
     
     # Dữ liệu mặc định nếu API lỗi
     return {
+        "thanh_pho": city,
         "nhiet_do": 28,
         "cam_giac": 30,
         "do_am": 75,
@@ -1175,9 +1177,9 @@ def tim_tra_loi(cau_hoi):
     # Kiểm tra yêu cầu thời tiết
     if any(word in cau_hoi for word in ["thời tiết", "nhiệt độ", "độ ẩm", "mưa", "gió", "khí hậu"]):
         thoi_tiet = lay_thoi_tiet()
-        return f"""🌤️ **THÔNG TIN THỜI TIẾT THANH HÓA**
+        return f"""🌤️ **THÔNG TIN THỜI TIẾT {thoi_tiet['thanh_pho'].upper()}**
         
-📍 **Vị trí:** Thanh Hóa, Việt Nam
+📍 **Vị trí:** {thoi_tiet['thanh_pho']}, Việt Nam
 🕐 **Thời gian:** {datetime.now().strftime("%d/%m/%Y %H:%M")}
 
 🌡️ **Nhiệt độ:** {thoi_tiet['nhiet_do']}°C (Cảm giác như {thoi_tiet['cam_giac']}°C)
@@ -1251,28 +1253,36 @@ def tim_tra_loi(cau_hoi):
 
 DATA_HINH_ANH = {
     "Bacterial Leaf Blight": {
-        "ten": "BỆNH BẠC LÁ (CHÁY BÌA LÁ)",
-        "trieu_chung": "Vết bệnh là các sọc thấm nước ở mép lá, sau chuyển sang vàng hoặc trắng xám. Rìa vết bệnh lượn sóng. Sáng sớm thường thấy giọt dịch vi khuẩn màu vàng đục.",
-        "nguyen_nhan": "Vi khuẩn *Xanthomonas oryzae pv. oryzae*. Lây lan mạnh qua mưa gió, vết thương cơ giới. Bón thừa đạm làm nặng bệnh.",
-        "giai_phap": "NGƯNG BÓN ĐẠM ngay lập tức. Rút nước khô ruộng 2-3 ngày. Phun thuốc đặc trị vi khuẩn: Bismerthiazol (Xanthomix 500g/ha), Oxolinic acid (Starner 400g/ha), Kasugamycin (Kasumin 1 lít/ha). Phun 2-3 lần cách 7-10 ngày."
+        "ten_viet": "BỆNH BẠC LÁ (CHÁY BÌA LÁ)",
+        "ten_khoa_hoc": "Xanthomonas oryzae pv. oryzae",
+        "mo_ta_ngan": "Vết bệnh là các sọc thấm nước ở mép lá, sau chuyển sang vàng hoặc trắng xám. Rìa vết bệnh lượn sóng. Sáng sớm thường thấy giọt dịch vi khuẩn màu vàng đục.",
+        "xu_ly_cap_cuu": "🚨 **HÀNH ĐỘNG KHẨN CẤP:** Ngưng bón đạm ngay, tháo cạn nước ruộng để khô 2-3 ngày nhằm kìm hãm vi khuẩn lây lan.",
+        "thuoc_dac_tri": "Bismerthiazol (Xanthomix 500g/ha), Oxolinic acid (Starner 400g/ha), Kasugamycin (Kasumin 1 lít/ha)",
+        "luu_y": "Tuyệt đối không phun phân bón lá hoặc thuốc kích thích khi đang có bệnh."
     },
     "Blast": {
-        "ten": "BỆNH ĐẠO ÔN (CHÁY LÁ)",
-        "trieu_chung": "Vết bệnh hình thoi (mắt én), tâm màu xám trắng, viền nâu đậm. Đạo ôn cổ bông gây vết nâu xám bao quanh cổ bông, làm bông gãy gục, hạt lép.",
-        "nguyen_nhan": "Nấm *Pyricularia oryzae*. Phát triển mạnh ở nhiệt độ 20-28°C, độ ẩm >90%, trời âm u sương mù, bón thừa đạm.",
-        "giai_phap": "GIỮ NƯỚC RUỘNG (không để khô). NGƯNG BÓN ĐẠM khi bệnh xuất hiện. Phun thuốc: Tricyclazole (Beam 300-400g/ha), Isoprothiolane (Fuji-one 1.5 lít/ha), Tebuconazole (Folicur 400ml/ha). ĐẶC BIỆT: Phun PHÒNG NGỪA đạo ôn cổ bông 2 lần bắt buộc (trổ 5-10% và trổ 50%)."
+        "ten_viet": "BỆNH ĐẠO ÔN (CHÁY LÁ)",
+        "ten_khoa_hoc": "Pyricularia oryzae",
+        "mo_ta_ngan": "Vết bệnh hình thoi (mắt én), tâm màu xám trắng, viền nâu đậm. Đạo ôn cổ bông gây vết nâu xám bao quanh cổ bông, làm bông gãy gục.",
+        "xu_ly_cap_cuu": "🛑 **LƯU Ý:** Giữ nước ruộng ổn định, ngưng bón đạm. Tuyệt đối không để ruộng bị khô hạn khi đang nhiễm bệnh.",
+        "thuoc_dac_tri": "Tricyclazole (Beam 300-400g/ha), Isoprothiolane (Fuji-one 1.5 lít/ha), Tebuconazole (Folicur 400ml/ha)",
+        "luu_y": "Phun phòng ngừa đạo ôn cổ bông 2 lần: khi lúa trổ lẹt xẹt 5% và khi trổ đều."
     },
     "Brown Spot": {
-        "ten": "BỆNH ĐỐM NÂU (TIÊM LỬA)",
-        "trieu_chung": "Nhiều đốm tròn nhỏ màu nâu như hạt mè rải rác trên lá. Viền vết màu vàng nhạt. Hạt bị nhiễm có đốm nâu đen.",
-        "nguyen_nhan": "Nấm *Bipolaris oryzae*. Thường xuất hiện trên đất nghèo dinh dưỡng, đất phèn chua (pH<5.5), thiếu Kali, thiếu Silic.",
-        "giai_phap": "CẢI TẠO ĐẤT: Bón vôi 300-500kg/ha (trước sạ 15-20 ngày) nếu đất chua. Bón bổ sung Kali 80-90kg K2O/ha. Bón Silic 100-150kg/ha (xỉ thép, tro trấu). Phun thuốc: Propiconazole (Tilt Super 500ml/ha), Difenoconazole (300ml/ha), Tebuconazole (500ml/ha)."
+        "ten_viet": "BỆNH ĐỐM NÂU (TIÊM LỬA)",
+        "ten_khoa_hoc": "Bipolaris oryzae",
+        "mo_ta_ngan": "Nhiều đốm tròn nhỏ màu nâu như hạt mè rải rác trên lá. Viền vết màu vàng nhạt. Hạt bị nhiễm có đốm nâu đen.",
+        "xu_ly_cap_cuu": "🚜 **CẢI TẠO ĐẤT:** Bón vôi (300-500kg/ha) để hạ phèn, bón bổ sung Kali và Silic để tăng sức đề kháng cho cây.",
+        "thuoc_dac_tri": "Propiconazole (Tilt Super 500ml/ha), Difenoconazole (300ml/ha), Tebuconazole (500ml/ha)",
+        "luu_y": "Bệnh thường là dấu hiệu của đất nghèo dinh dưỡng hoặc đất phèn mặn."
     },
     "Tungro": {
-        "ten": "BỆNH DO VIRUS (VÀNG LÙN/LÙN XOẮN LÁ)",
-        "trieu_chung": "Vàng lùn: Lá vàng cam, cây thấp lùn, lá xòe ngang, rễ thối đen. Lùn xoắn lá: Lá xanh đậm, ngắn, xoăn tít, gân lá sưng phồng.",
-        "nguyen_nhan": "Virus (RGSV - vàng lùn, RRSV - lùn xoắn lá) do Rầy nâu truyền bệnh. KHÔNG CÓ THUỐC TRỊ VIRUS.",
-        "giai_phap": "NHỔ BỎ cây bệnh ngay (cả rễ), cho vào bao nilon kín, vùi sâu >50cm (CẤM để phơi ngoài đồng). DIỆT RẦY NÂU triệt để: Pymetrozine/Chess (200-300g/ha), Buprofezin/Applaud (600ml/ha), Nitenpyram (400ml/ha). Phun tập trung vào gốc lúa. Chọn giống kháng rầy (IR64, OM 9577). Gieo sạ đúng thời vụ 'né rầy' (Đông Xuân: tháng 12-1, Hè Thu: trước 20/4 hoặc sau 15/5, TRÁNH 25/4-10/5)."
+        "ten_viet": "BỆNH DO VIRUS (VÀNG LÙN/LÙN XOẮN LÁ)",
+        "ten_khoa_hoc": "Rice Grassy Stunt Virus (RGSV) & Rice Ragged Stunt Virus (RRSV)",
+        "mo_ta_ngan": "Lá vàng cam, cây thấp lùn, lá xòe ngang (vàng lùn) hoặc lá xanh đậm, xoăn tít, gân lá sưng phồng (lùn xoắn lá).",
+        "xu_ly_cap_cuu": "⚠️ **KHÔNG CÓ THUỐC TRỊ:** Nhổ bỏ khóm bệnh ngay lập tức, cho vào bao kín và vùi sâu hoặc đốt để tránh rầy lây lan.",
+        "thuoc_dac_tri": "Chỉ có thuốc trừ Rầy nâu (môi giới): Pymetrozine (Chess), Buprofezin (Applaud).",
+        "luu_y": "Virus lây qua môi giới là Rầy nâu. Diệt rầy là cách duy nhất bảo vệ ruộng."
     }
 }
 
@@ -1285,7 +1295,7 @@ DATA_HINH_ANH.update({
     "Hispa": {"ref": "Blast"}
 })
 
-def ve_bbox_va_ti_le(img, predictions):
+def ve_bbox_voi_confidence(img, predictions):
     """Vẽ bounding box VÀ hiển thị tỉ lệ chính xác lên ảnh"""
     draw = ImageDraw.Draw(img)
     try:
@@ -1348,11 +1358,11 @@ st.caption("Hệ thống chẩn đoán và tư vấn phòng trừ bệnh hại l
 
 # Hiển thị thời tiết ở sidebar
 with st.sidebar:
-    st.markdown("### 🌤️ THỜI TIẾT THANH HÓA")
+    st.markdown("### 🌤️ THỜI TIẾT")
     thoi_tiet = lay_thoi_tiet()
     st.markdown(f"""
     <div class="weather-box">
-        <h4 style='color: white; margin: 0;'>📍 Thanh Hóa</h4>
+        <h4 style='color: white; margin: 0;'>📍 {thoi_tiet['thanh_pho']}</h4>
         <p style='font-size: 32px; margin: 10px 0;'>{thoi_tiet['nhiet_do']}°C</p>
         <p style='margin: 5px 0;'>💧 Độ ẩm: {thoi_tiet['do_am']}%</p>
         <p style='margin: 5px 0;'>🌪️ Gió: {thoi_tiet['gio']} km/h</p>
@@ -1431,6 +1441,8 @@ with tab1:
                                 confidence = top_prediction['confidence'] * 100
                                 
                                 disease_info = DATA_HINH_ANH.get(class_name, {})
+                                if "ref" in disease_info:
+                                    disease_info = DATA_HINH_ANH.get(disease_info["ref"], {})
                                 
                                 # Hiển thị kết quả
                                 st.success(f"### 🎯 {disease_info.get('ten_viet', class_name)}")
@@ -1486,7 +1498,7 @@ with tab2:
         
         # Tìm câu trả lời
         with st.chat_message("assistant"):
-            response = tim_tra_loi_chat(prompt)
+            response = tim_tra_loi(prompt)
             st.markdown(response)
             st.session_state['chat_messages'].append({"role": "assistant", "content": response})
 
@@ -1522,7 +1534,7 @@ with tab3:
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; padding: 20px;'>
-    <p>🌾 <strong>Chuyên Gia Bệnh Lúa AI - Thanh Hóa 2026</strong></p>
+    <p>🌾 <strong>Chuyên Gia Bệnh Lúa AI - {thoi_tiet['thanh_pho']} 2026</strong></p>
     <p>🤖 Powered by <strong>Roboflow Object Detection</strong> | 🌐 OpenWeatherMap API</p>
     <p style='font-size: 12px; margin-top: 10px;'>
         ⚠️ <em>Kết quả chỉ mang tính chất tham khảo. Nên tham khảo ý kiến chuyên gia nông nghiệp địa phương.</em>
