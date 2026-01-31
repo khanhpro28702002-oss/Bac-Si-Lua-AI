@@ -498,4 +498,172 @@ with tab_tra_cuu:
         if "ref" not in val: # Chỉ hiện bệnh chính
             with st.expander(f"{val['icon']} {val['vn_name']}"):
                 st.write(f"**Dấu hiệu:** {val['trieu_chung']}")
-                st.write(f"**Thuốc:** {', '.join(val['thuoc_goi_y'])}")
+                st.write(f"**Thuốc:** {', '.join(val['thuoc_goi_y'])}")import streamlit as st
+from inference_sdk import InferenceHTTPClient
+from PIL import Image
+import numpy as np
+import cv2
+from datetime import datetime
+from gtts import gTTS
+import io
+from fpdf import FPDF
+import time
+import requests
+from streamlit_js_eval import get_geolocation
+
+# --- 1. CẤU HÌNH HỆ THỐNG ---
+MY_API_KEY = "8tf2UvcnEv8h80bV2G0Q"
+MY_MODEL_ID = "rice-leaf-disease-twtlz/1"
+
+st.set_page_config(page_title="Bác Sĩ Lúa AI Pro", page_icon="🌾", layout="wide")
+
+# Khởi tạo bộ nhớ
+if 'chat_history' not in st.session_state:
+    st.session_state['chat_history'] = [{"role": "assistant", "content": "Chào bà con! Tôi là Trợ lý lúa gạo. Bà con cần hỏi gì ạ?"}]
+
+# --- 2. KHO DỮ LIỆU THUỐC & BỆNH (CHI TIẾT) ---
+TU_DIEN_BENH = {
+    "Bacterial Leaf Blight": {
+        "vn_name": "BỆNH BẠC LÁ (CHÁY BÌA LÁ)",
+        "trieu_chung": "Vết bệnh từ chóp lá lan xuống dọc mép lá, màu vàng hoặc trắng xám.",
+        "nguyen_nhan": "Vi khuẩn Xanthomonas oryzae. Thừa đạm, mưa bão làm rách lá.",
+        "hoat_chat": "Oxolinic acid, Bismerthiazol, Bronopol.",
+        "thuoc": "Starner 20WP, Xanthomix 20WP, Totan 200WP, Sasa 25WP.",
+        "loi_khuyen": "Ngưng bón đạm ngay, rút nước ruộng cho khô ráo.",
+        "icon": "🦠"
+    },
+    "Blast": {
+        "vn_name": "BỆNH ĐẠO ÔN (CHÁY LÁ)",
+        "trieu_chung": "Vết hình mắt én, tâm xám trắng, viền nâu đậm.",
+        "nguyen_nhan": "Nấm Pyricularia oryzae. Trời âm u, sương mù, đêm lạnh.",
+        "hoat_chat": "Tricyclazole, Isoprothiolane, Fenoxanil.",
+        "thuoc": "Beam 75WP, Fuji-one 40EC, Filia 525SE, Flash 75WP.",
+        "loi_khuyen": "Giữ nước ruộng 3-5cm, không phun phân bón lá lúc này.",
+        "icon": "🔥"
+    },
+    "Brown Spot": {
+        "vn_name": "BỆNH ĐỐM NÂU (TIÊM LỬA)",
+        "trieu_chung": "Vết tròn nhỏ màu nâu như hạt mè rải rác trên lá.",
+        "nguyen_nhan": "Nấm Bipolaris oryzae. Đất phèn, nghèo dinh dưỡng, thiếu Kali.",
+        "hoat_chat": "Propiconazole, Difenoconazole.",
+        "thuoc": "Tilt Super 300EC, Anvil 5SC, Nevo 330EC.",
+        "loi_khuyen": "Bón bổ sung Kali và vôi để cải tạo đất.",
+        "icon": "🍂"
+    }
+}
+# Mapping tên dính liền từ AI
+TU_DIEN_BENH.update({
+    "Bacterialblight": {"ref": "Bacterial Leaf Blight"},
+    "Leaf Blast": {"ref": "Blast"}, "Rice Blast": {"ref": "Blast"},
+    "Brownspot": {"ref": "Brown Spot"}, "Sheathblight": {"vn_name": "KHÔ VẰN", "thuoc": "Validacin 5L, Anvil 5SC"},
+    "Hispa": {"vn_name": "SÂU GAI", "thuoc": "Padan 95SP"},
+    "Leafscald": {"vn_name": "CHÁY CHÓP LÁ", "thuoc": "Carbenzim 500FL"}
+})
+
+# --- 3. HÀM TIỆN ÍCH ---
+def get_weather(lat, lon):
+    try:
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,rain&timezone=auto"
+        res = requests.get(url, timeout=5).json()
+        return res.get('current')
+    except: return None
+
+def create_pdf(info):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', size=16)
+    pdf.cell(200, 10, txt="PHIEU KET QUA CHAN DOAN", ln=1, align='C')
+    pdf.set_font("Arial", size=12)
+    pdf.ln(10)
+    pdf.cell(0, 10, txt=f"BENH: {info['vn_name']}", ln=1)
+    pdf.multi_cell(0, 10, txt=f"Nguyen nhan: {info['nguyen_nhan']}")
+    pdf.multi_cell(0, 10, txt=f"Thuoc dac tri: {info['thuoc']}")
+    return pdf.output(dest='S').encode('latin-1', 'ignore')
+
+# --- 4. GIAO DIỆN ---
+st.markdown("""
+<style>
+    .main {background-color: #f8fff0;}
+    .weather-card {background: linear-gradient(135deg, #2e7d32, #1b5e20); color: white; padding: 20px; border-radius: 15px; text-align: center;}
+</style>
+""", unsafe_allow_html=True)
+
+st.title("🌾 HỆ THỐNG CHUẨN ĐOÁN & TRỢ LÝ LÚA AI")
+st.markdown("---")
+
+# --- XỬ LÝ THỜI TIẾT (FIX LỖI KEYERROR) ---
+st.subheader("🌦️ Thời Tiết Nông Vụ")
+location = get_geolocation()
+
+if location and 'coords' in location:
+    lat = location['coords'].get('latitude')
+    lon = location['coords'].get('longitude')
+    
+    if lat and lon:
+        w = get_weather(lat, lon)
+        if w:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("🌡️ Nhiệt độ", f"{w['temperature_2m']}°C")
+            c2.metric("💧 Độ ẩm", f"{w['relative_humidity_2m']}%")
+            c3.metric("🌧️ Lượng mưa", f"{w['rain']} mm")
+            
+            if w['rain'] > 0: st.error("☔ Trời đang mưa: Bà con tạm ngưng phun thuốc!")
+            elif w['relative_humidity_2m'] > 85: st.warning("🔥 Ẩm cao: Nguy cơ Đạo ôn tăng cao!")
+            else: st.success("🌤️ Thời tiết thuận lợi để thăm đồng.")
+else:
+    st.info("📍 Đang chờ xác nhận vị trí... (Vui lòng bấm 'Cho phép/Allow' trên trình duyệt)")
+
+st.markdown("---")
+
+t1, t2 = st.tabs(["📸 CHẨN ĐOÁN HÌNH ẢNH", "💬 HỎI ĐÁP AI"])
+
+with t1:
+    col_l, col_r = st.columns([1, 1.3])
+    with col_l:
+        mode = st.radio("Chọn nguồn:", ["Tải ảnh", "Camera"], horizontal=True)
+        img_file = st.camera_input("Chụp mẫu") if mode == "Camera" else st.file_uploader("Chọn ảnh", type=['jpg','png'])
+
+    if img_file:
+        img = Image.open(img_file)
+        with col_l:
+            st.image(img, use_column_width=True)
+            if st.button("🔍 PHÂN TÍCH", type="primary", use_container_width=True):
+                with col_r:
+                    with st.spinner("Đang soi bệnh..."):
+                        img.save("temp.jpg")
+                        client = InferenceHTTPClient(api_url="https://detect.roboflow.com", api_key=MY_API_KEY)
+                        res = client.infer("temp.jpg", model_id=MY_MODEL_ID)
+                        preds = res.get('predictions', [])
+                        if isinstance(preds, dict): preds = [{"class": k, "confidence": v['confidence']} for k, v in preds.items()]
+
+                        if preds:
+                            top = max(preds, key=lambda x: x['confidence'])
+                            info = TU_DIEN_BENH.get(top['class'])
+                            if info and "ref" in info: info = TU_DIEN_BENH.get(info["ref"])
+                            
+                            if info:
+                                st.success(f"🔴 PHÁT HIỆN: {info['vn_name']}")
+                                st.write(f"**🧐 Dấu hiệu:** {info.get('trieu_chung','')}")
+                                st.warning(f"**💊 Thuốc:** {info.get('thuoc','')}")
+                                
+                                # Audio
+                                txt = f"Lúa bị {info['vn_name']}. Bà con nên dùng thuốc {info['thuoc']}"
+                                gTTS(txt, lang='vi').save("v.mp3")
+                                st.audio("v.mp3")
+                                
+                                # PDF
+                                st.download_button("📥 Tải đơn thuốc", create_pdf(info), "don.pdf")
+                        else: st.success("✅ Cây lúa khỏe mạnh!")
+
+with t2:
+    for m in st.session_state.chat_history:
+        with st.chat_message(m["role"]): st.write(m["content"])
+    if p := st.chat_input("Bà con muốn hỏi gì?"):
+        st.session_state.chat_history.append({"role": "user", "content": p})
+        with st.chat_message("user"): st.write(p)
+        # AI Logic đơn giản
+        ans = "Bà con vui lòng hỏi về: đạo ôn, bạc lá, đốm nâu hoặc thuốc trị bệnh để tôi hỗ trợ nhé!"
+        if "đạo ôn" in p.lower(): ans = "Đạo ôn bà con dùng Beam 75WP hoặc Fuji-one nhé."
+        elif "bạc lá" in p.lower(): ans = "Bạc lá bà con ngưng đạm, phun Starner 20WP ngay."
+        st.session_state.chat_history.append({"role": "assistant", "content": ans})
+        with st.chat_message("assistant"): st.write(ans)
