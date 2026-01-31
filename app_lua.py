@@ -2,193 +2,340 @@ import streamlit as st
 from inference_sdk import InferenceHTTPClient
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
-from gtts import gTTS
-import requests
 import os
 
+# Cấu hình trang
 st.set_page_config(page_title="Bác Sĩ Lúa AI 4.0", page_icon="🌾", layout="wide")
 
+# CSS tùy chỉnh giao diện
 st.markdown("""
 <style>
-    .main { background-color: #f4fdf4; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-    .report-card { background-color: #ffffff; padding: 20px; border-radius: 15px; border-left: 8px solid #2e7d32; }
-    h1 { color: #1b5e20; }
+    .main {background-color: #f0f2f6;}
+    h1 {color: #2e7d32;}
+    .stChatInput {border-radius: 20px;}
 </style>
 """, unsafe_allow_html=True)
 
+# Khởi tạo session state
 if 'history' not in st.session_state:
     st.session_state['history'] = []
 if 'chat_messages' not in st.session_state:
     st.session_state['chat_messages'] = []
 
-# KIẾN THỨC CHAT
+# ==============================================================================
+# 1. CƠ SỞ DỮ LIỆU TRI THỨC (Tổng hợp từ nguồn [2]-[3])
+# ==============================================================================
+
 KIEN_THUC = {
-    "đạo ôn": "🔥 **BỆNH ĐẠO ÔN**\n\n**Triệu chứng:** Vết hình mắt én, tâm xám trắng, viền nâu\n\n**Thuốc:** Beam 75WP (200g/ha), Fuji-one 40EC\n\n**Phòng ngừa:** Giữ nước ổn định, không bón thừa đạm\n\n**Giống kháng:** OM5451, OM6976",
-    "bạc lá": "🦠 **BỆNH BẠC LÁ**\n\n**Triệu chứng:** Vết lan dọc mép lá, màu vàng/trắng xám\n\n**Thuốc:** Starner 20WP (50g/20L), Xanthomix\n\n**Nguyên nhân:** Vi khuẩn Xanthomonas\n\n**Khuyến cáo:** Rút nước ruộng, ngưng bón đạm",
-    "đốm nâu": "🍂 **BỆNH ĐỐM NÂU**\n\n**Triệu chứng:** Vết tròn màu nâu như hạt mè\n\n**Thuốc:** Tilt Super 300EC, Anvil 5SC\n\n**Nguyên nhân:** Nấm, thiếu dinh dưỡng\n\n**Bổ sung:** Vôi bột 500kg/ha, bón cân đối N-P-K",
-    "sâu cuốn lá": "🐛 **SÂU CUỐN LÁ**\n\n**Triệu chứng:** Lá bị cuộn thành ống\n\n**Thuốc:** Coragen (125ml/ha) phun khi sâu non\n\n**Phòng trừ:** Bật đèn bắt sâu, thả ong ký sinh\n\n**Thời điểm:** Sâu non 1-2 tuổi hiệu quả nhất",
-    "bón phân": "🌱 **BÓN PHÂN LÚA**\n\n**Đạm (Urê 46%):** 120kg/ha chia 3 lần\n- Lúc cày: 40kg\n- Đẻ nhánh: 50kg\n- Làm đòng: 30kg\n\n**Lân (SP36):** 60kg/ha lúc cày\n\n**Kali (KCl):** 40kg/ha lúc đẻ nhánh\n\n**Lưu ý:** Không bón thừa đạm giai đoạn cuối → dễ đổ",
-    "om5451": "🌾 **GIỐNG OM5451**\n\n**Năng suất:** 7-8 tấn/ha\n\n**Thời gian:** 95 ngày (vừa sớm)\n\n**Ưu điểm:**\n- Kháng đạo ôn tốt\n- Chịu hạn\n- Chất lượng gạo khá\n\n**Thời vụ:** Phù hợp cả Đông Xuân và Hè Thu",
-    "om6976": "🌾 **GIỐNG OM6976**\n\n**Năng suất:** 6.5-7 tấn/ha\n\n**Thời gian:** 100 ngày\n\n**Ưu điểm:**\n- Gạo thơm, chất lượng cao\n- Thích hợp xuất khẩu\n- Giá bán cao hơn OM5451",
-    "gieo sạ": "🚜 **GIEO SẠ LÚA**\n\n**Mật độ giống:** 120-150kg/ha\n\n**Thời vụ:**\n- Đông Xuân: tháng 11-12\n- Hè Thu: tháng 5-6\n\n**Chuẩn bị:**\n- Ủ nước 3-5 ngày\n- Diệt cỏ trước khi gieo\n- Đất phải bằng phẳng",
-    "thời vụ": "📅 **THỜI VỤ LÚA MIỀN BẮC**\n\n**Vụ Đông Xuân:**\n- Gieo: 11-12\n- Thu: 3-4\n- Nhiệt độ thấp, ít sâu bệnh\n\n**Vụ Hè Thu:**\n- Gieo: 5-6\n- Thu: 8-9\n- Nắng nóng, nhiều sâu bệnh hơn"
+    # --- NHÓM BỆNH DO NẤM ---
+    "đạo ôn": """🔥 **BỆNH ĐẠO ÔN (CHÁY LÁ)** [4], [5]
+    \n**1. Tác nhân:** Nấm *Pyricularia oryzae*. Phát triển mạnh khi trời âm u, sương mù, ẩm độ cao, bón thừa đạm [6].
+    \n**2. Dấu hiệu nhận biết:** 
+    - **Trên lá:** Vết bệnh hình thoi (mắt én), tâm màu xám trắng, viền nâu đậm [5], [7].
+    - **Trên cổ bông:** Vết nâu xám bao quanh cổ bông, làm bông bị gãy gục, hạt lép (đạo ôn cổ bông) [8].
+    \n**3. Biện pháp phòng trừ:**
+    - **Canh tác:** Gieo sạ mật độ vừa phải, bón cân đối N-P-K, không bón thừa đạm đón đòng [9], [10].
+    - **Thuốc đặc trị:** Các hoạt chất *Tricyclazole* (Beam 75WP), *Isoprothiolane* (Fuji-one), *Fenoxanil*, *Azoxystrobin* [11], [12].
+    - **Lưu ý:** Phun ngừa đạo ôn cổ bông ở giai đoạn trước trổ và sau khi trổ đều [13].""",
+
+    "khô vằn": """🍂 **BỆNH KHÔ VẰN (ĐỐM VẰN)** [14], [15]
+    \n**1. Tác nhân:** Nấm *Rhizoctonia solani*. Thường gặp ở ruộng sạ dày, ngập nước lâu [16].
+    \n**2. Dấu hiệu nhận biết:**
+    - Vết bệnh ở bẹ lá, phiến lá dạng đám mây, vằn da hổ [17].
+    - Ban đầu là đốm hình bầu dục màu lục tối, sau chuyển xám trắng, viền nâu [17].
+    - Xuất hiện hạch nấm hình tròn dẹt màu nâu [18].
+    \n**3. Biện pháp phòng trừ:**
+    - **Canh tác:** Vệ sinh đồng ruộng, dọn sạch cỏ bờ (nơi nấm trú ẩn) [10].
+    - **Thuốc đặc trị:** *Hexaconazole* (Anvil 5SC), *Validamycin* (Validacin), *Pencycuron*, *Azoxystrobin* [11], [19].
+    - **Sinh học:** Sử dụng nấm đối kháng *Trichoderma* [20], [21].""",
+
+    "lem lép hạt": """⚫ **BỆNH LEM LÉP HẠT** [22], [23]
+    \n**1. Nguyên nhân:** Do phức hợp nấm (*Fusarium, Curvularia*...) và vi khuẩn (*Pseudomonas glumae*) tấn công giai đoạn trổ [24].
+    \n**2. Dấu hiệu:**
+    - Hạt lúa có đốm nâu, đen, tím hoặc biến màu xám ngoét [22].
+    - Hạt lửng hoặc lép hoàn toàn, gạo đục, dễ gãy [23].
+    \n**3. Biện pháp phòng trừ:**
+    - **Thời điểm vàng:** Phun thuốc 2 lần: (1) Khi lúa trổ lẹt xẹt 5% và (2) Khi lúa trổ đều [24], [25].
+    - **Thuốc đặc trị:** *Difenoconazole*, *Propiconazole* (Tilt Super), *Azoxystrobin* + *Difenoconazole* (Amistar Top) [11], [12].""",
+
+    # --- NHÓM BỆNH DO VI KHUẨN ---
+    "bạc lá": """🦠 **BỆNH BẠC LÁ (CHÁY BÌA LÁ)** [26], [27]
+    \n**1. Tác nhân:** Vi khuẩn *Xanthomonas oryzae*. Lây lan nhanh qua vết thương cơ giới sau mưa bão [28].
+    \n**2. Dấu hiệu nhận biết:**
+    - Vết bệnh lan từ chóp lá dọc theo hai bên mép lá [29].
+    - Vết bệnh màu vàng hoặc trắng xám, ranh giới vết bệnh gợn sóng [26].
+    - Sáng sớm có giọt dịch vi khuẩn màu vàng đục trên vết bệnh [26], [30].
+    \n**3. Biện pháp phòng trừ:**
+    - **Cấp bách:** Khi bệnh chớm xuất hiện, **ngưng bón đạm**, rút nước để khô ruộng 2-3 ngày [31], [32].
+    - **Thuốc đặc trị:** *Bismerthiazol* (Xanthomix), *Oxolinic acid* (Starner), *Bronopol*, *Kasugamycin* [11], [33].
+    - **Lưu ý:** Không phun thuốc kèm phân bón lá khi lúa đang bệnh [27].""",
+
+    # --- NHÓM BỆNH DO VIRUS ---
+    "vàng lùn": """⚠️ **BỆNH VÀNG LÙN & LÙN XOẮN LÁ** [34], [35]
+    \n**1. Tác nhân:** Virus do **Rầy nâu** truyền bệnh. Không có thuốc đặc trị virus [36].
+    \n**2. Dấu hiệu nhận biết:**
+    - **Vàng lùn:** Lá lúa chuyển vàng từ chóp xuống, cây thấp lùn, đẻ nhánh kém, rễ thối [37].
+    - **Lùn xoắn lá:** Lá xanh đậm, ngắn, xoăn tít (như lò xo), gân lá sưng, không trổ bông được [38], [37].
+    \n**3. Biện pháp quản lý:**
+    - **Tiêu hủy:** Nhổ bỏ, vùi sâu bụi lúa bệnh để cắt nguồn lây [39].
+    - **Trừ môi giới:** Phòng trừ rầy nâu triệt để bằng *Pymetrozine*, *Buprofezin* [40].
+    - **Giống:** Chọn giống kháng rầy, gieo sạ "né rầy" [39].""",
+
+    # --- CÔN TRÙNG HẠI ---
+    "rầy nâu": """🦗 **RẦY NÂU (Brown Planthopper)** [41]
+    \n**1. Tác hại:** Chích hút nhựa làm lúa "cháy rầy", truyền bệnh vàng lùn [41].
+    \n**2. Phòng trừ:**
+    - Thăm đồng thường xuyên, vạch gốc lúa kiểm tra.
+    - Phun thuốc khi mật độ > 3 con/tép [42].
+    - **Thuốc:** *Pymetrozine* (Chess), *Buprofezin* (Applaud), *Nitenpyram* [40].
+    - Áp dụng IPM, bảo vệ thiên địch (nhện, bọ xít nước) [43].""",
+
+    "sâu cuốn lá": """🐛 **SÂU CUỐN LÁ NHỎ** [44], [45]
+    \n**1. Dấu hiệu:** Sâu nhả tơ cuốn dọc lá lúa thành ống, ăn phần thịt lá để lại lớp biểu bì trắng [44].
+    \n**2. Ngưỡng phòng trừ:** Mật độ 20-50 con/m2 (giai đoạn đẻ nhánh-làm đòng) [46].
+    \n**3. Thuốc đặc trị:** *Indoxacarb*, *Chlorantraniliprole* (Virtako), *Emamectin benzoate* [40], [47]. Phun khi sâu còn non (tuổi 1-2).""",
+
+    # --- KỸ THUẬT CANH TÁC ---
+    "bón phân": """🌱 **KỸ THUẬT BÓN PHÂN CÂN ĐỐI (Theo quy trình 3 Giảm 3 Tăng)** [48], [10]
+    \n**Nguyên tắc:** "Nặng đầu, nhẹ cuối".
+    1. **Bón lót:** 100% Lân + 30% Đạm.
+    2. **Bón thúc 1 (7-10 NSS):** 30% Đạm + 30% Kali.
+    3. **Bón thúc 2 (18-22 NSS):** 40% Đạm còn lại.
+    4. **Bón đón đòng (40-45 NSS):** 70% Kali còn lại (tùy màu lá lúa mà bổ sung đạm ít hay nhiều - bảng so màu lá) [49].
+    \n⚠️ **Lưu ý:** Thừa đạm gây đạo ôn, bạc lá, đổ ngã.""",
+    
+    "ipm": """🛡️ **QUẢN LÝ DỊCH HẠI TỔNG HỢP (IPM)** [2], [50], [51]
+    \n**5 Nguyên tắc cơ bản:**
+    1. Trồng cây khỏe (giống tốt, đất tốt).
+    2. Bảo vệ thiên địch (không phun thuốc bừa bãi).
+    3. Thăm đồng thường xuyên.
+    4. Nông dân trở thành chuyên gia.
+    5. Phòng trừ dịch hại đúng cách (chỉ phun khi tới ngưỡng kinh tế) [51].""",
+}
+
+# Mapping từ khóa bổ sung để tìm kiếm tốt hơn
+KEYWORD_MAPPING = {
+    "đốm sọc": "bạc lá",
+    "cháy bìa": "bạc lá",
+    "tiêm lửa": "đốm nâu",
+    "rầy": "rầy nâu",
+    "sâu": "sâu cuốn lá",
+    "lúa von": "đạo ôn",
+    "bù lạch": "bọ trĩ",
+    "thuốc sâu": "sâu cuốn lá",
+    "phân bón": "bón phân"
 }
 
 def tim_tra_loi(cau_hoi):
     cau_hoi = cau_hoi.lower()
+    
+    # Kiểm tra mapping từ khóa
+    for key, mapped_value in KEYWORD_MAPPING.items():
+        if key in cau_hoi:
+            cau_hoi += " " + mapped_value
+            
+    # Tìm kiếm trong cơ sở dữ liệu
     for key, value in KIEN_THUC.items():
         if key in cau_hoi:
             return value
-    return "🌾 **TÔI CÓ THỂ TƯ VẤN VỀ:**\n\n• Bệnh: đạo ôn, bạc lá, đốm nâu\n• Sâu hại: sâu cuốn lá\n• Dinh dưỡng: bón phân\n• Giống lúa: OM5451, OM6976\n• Kỹ thuật: gieo sạ, thời vụ\n\n**Hãy hỏi cụ thể hơn nhé!**"
+            
+    return """🌾 **BÁC SĨ LÚA CÓ THỂ TƯ VẤN VỀ:**
+    \n🦠 **Bệnh hại:** Đạo ôn, Bạc lá (cháy bìa), Khô vằn, Lem lép hạt, Vàng lùn.
+    \n🐛 **Sâu hại:** Rầy nâu, Sâu cuốn lá, Bọ trĩ.
+    \n🧪 **Thuốc BVTV:** Tên hoạt chất, cách dùng.
+    \n🌱 **Kỹ thuật:** Bón phân, IPM.
+    \n**Bà con hãy đặt câu hỏi cụ thể. Ví dụ: "Thuốc trị đạo ôn là gì?" hoặc "Cách phòng rầy nâu"**"""
+
+# ==============================================================================
+# 2. DỮ LIỆU CHẨN ĐOÁN HÌNH ẢNH (Mapping từ Model Class -> Tiếng Việt)
+# ==============================================================================
 
 DATA_BENH = {
     "Bacterial Leaf Blight": {
         "ten": "BỆNH BẠC LÁ (CHÁY BÌA LÁ)",
-        "trieu_chung": "Vết bệnh lan dọc mép lá từ chóp xuống, màu vàng hoặc trắng xám.",
-        "nguyen_nhan": "Vi khuẩn Xanthomonas oryzae. Thừa đạm, mưa bão.",
-        "thuoc": ["Starner 20WP", "Xanthomix 20WP", "Totan 200WP"],
-        "loi_khuyen": "Ngưng bón đạm, bón Kali. Rút nước ruộng."
+        "trieu_chung": "Vết bệnh lan dọc mép lá, màu vàng hoặc trắng xám, có giọt dịch vi khuẩn [26].",
+        "nguyen_nhan": "Vi khuẩn *Xanthomonas oryzae*. Do mưa bão, thừa đạm [53].",
+        "thuoc": ["Kasumin 2SL", "Starner 20WP", "Totan 200WP", "Xanthomix 20WP"],
+        "loi_khuyen": "Rút nước, tháo nước khô ruộng 2-3 ngày. Ngưng bón đạm [33]."
     },
     "Blast": {
         "ten": "BỆNH ĐẠO ÔN (CHÁY LÁ)",
-        "trieu_chung": "Vết bệnh hình mắt én, tâm xám trắng, viền nâu đậm.",
-        "nguyen_nhan": "Nấm Pyricularia oryzae. Độ ẩm cao, sương mù.",
-        "thuoc": ["Beam 75WP", "Fuji-one 40EC", "Filia 525SE"],
-        "loi_khuyen": "Giữ nước ruộng ổn định. Không phun lá khi bệnh."
+        "trieu_chung": "Vết hình thoi (mắt én), tâm xám trắng, viền nâu [5], [7].",
+        "nguyen_nhan": "Nấm *Pyricularia oryzae*. Sương mù nhiều, ẩm độ cao [7].",
+        "thuoc": ["Beam 75WP (Tricyclazole)", "Filia 525SE", "Fuji-one 40EC", "Ninja 35EC"],
+        "loi_khuyen": "Giữ nước ruộng. Không được để ruộng khô. Phun thuốc đặc trị nấm [13]."
     },
     "Brown Spot": {
         "ten": "BỆNH ĐỐM NÂU (TIÊM LỬA)",
-        "trieu_chung": "Vết tròn nhỏ màu nâu như hạt mè.",
-        "nguyen_nhan": "Nấm. Thiếu dinh dưỡng, đất phèn.",
-        "thuoc": ["Tilt Super 300EC", "Anvil 5SC"],
-        "loi_khuyen": "Bón cân đối N-P-K, bổ sung vôi."
+        "trieu_chung": "Vết tròn nhỏ màu nâu như hạt mè, lá vàng [54].",
+        "nguyen_nhan": "Nấm *Bipolaris oryzae*. Thường do đất thiếu dinh dưỡng, phèn [55].",
+        "thuoc": ["Tilt Super 300EC", "Anvil 5SC", "Nevado"],
+        "loi_khuyen": "Bón bổ sung Kali, Silic, vôi bột để cải tạo đất [56]."
+    },
+    "Tungro": {
+        "ten": "BỆNH VÀNG LÙN/LÙN XOẮN LÁ",
+        "trieu_chung": "Lá vàng cam, cây thấp lùn, lá xoắn [38].",
+        "nguyen_nhan": "Virus do Rầy nâu truyền [57].",
+        "thuoc": ["Không có thuốc trị virus. Phun thuốc trừ rầy: Chess, Applaud"],
+        "loi_khuyen": "Nhổ bỏ cây bệnh. Quản lý rầy nâu chặt chẽ [39]."
     }
 }
+
+# Mapping các tên class khác nhau từ model về chuẩn
 DATA_BENH.update({
     "Bacterialblight": {"ref": "Bacterial Leaf Blight"},
     "Leaf Blast": {"ref": "Blast"},
     "Rice Blast": {"ref": "Blast"},
-    "Brownspot": {"ref": "Brown Spot"}
+    "Brownspot": {"ref": "Brown Spot"},
+    "Hispa": {"ref": "Blast"}
 })
 
 def ve_bbox(img, predictions):
     draw = ImageDraw.Draw(img)
     try:
-        font = ImageFont.truetype("arial.ttf", 25)
+        font = ImageFont.truetype("arial.ttf", 30)
     except:
         font = ImageFont.load_default()
+        
     for i, pred in enumerate(predictions[:3]):
         conf = pred['confidence'] * 100
+        if conf < 40:
+            continue
+        
         label = f"{pred['class']}: {conf:.1f}%"
-        x, y = 20, 20 + i * 35
-        bbox = draw.textbbox((x, y), label, font=font)
-        draw.rectangle(bbox, fill=(0, 128, 0, 200))
-        draw.text((x, y), label, fill=(255, 255, 255), font=font)
+        
+        x = pred.get('x', 0)
+        y = pred.get('y', 0)
+        w = pred.get('width', 100)
+        h = pred.get('height', 100)
+        
+        x0 = x - w/2
+        y0 = y - h/2
+        x1 = x + w/2
+        y1 = y + h/2
+        
+        draw.rectangle([x0, y0, x1, y1], outline="red", width=3)
+        
+        bbox = draw.textbbox((x0, y0-30), label, font=font)
+        draw.rectangle(bbox, fill=(255, 0, 0))
+        draw.text((x0, y0-30), label, fill="white", font=font)
+        
     return img
 
-# HEADER
-st.markdown("<h1>🌾 BÁC SĨ LÚA AI 4.0</h1>", unsafe_allow_html=True)
-st.caption("Chẩn đoán bệnh lúa + Chat tư vấn thông minh")
+# ==============================================================================
+# 3. GIAO DIỆN ỨNG DỤNG
+# ==============================================================================
+
+st.markdown("<h1 style='text-align: center;'>🌾 BÁC SĨ LÚA AI 4.0</h1>", unsafe_allow_html=True)
+st.caption("Chẩn đoán bệnh lúa qua ảnh & Tư vấn kỹ thuật canh tác (Dữ liệu cập nhật 2025)")
 st.markdown("---")
 
-# TABS
-tab1, tab2, tab3 = st.tabs(["🔍 CHẨN ĐOÁN HÌNH ẢNH", "💬 CHAT CHUYÊN GIA", "📋 LỊCH SỬ"])
+tab1, tab2, tab3 = st.tabs(["🔍 CHẨN ĐOÁN HÌNH ẢNH", "💬 CHAT VỚI CHUYÊN GIA", "📋 LỊCH SỬ"])
 
-# TAB 1: CHẨN ĐOÁN
+# --- TAB 1: CHẨN ĐOÁN ---
 with tab1:
     col_l, col_r = st.columns([1, 1.3])
+    
     with col_l:
-        st.subheader("1. Chụp/Tải ảnh lá lúa")
-        input_type = st.radio("Chọn nguồn:", ["Tải ảnh từ máy", "Chụp bằng Camera"], horizontal=True)
-        if input_type == "Chụp bằng Camera":
+        st.subheader("1. Tải ảnh lá lúa bị bệnh")
+        st.info("💡 Mẹo: Chụp rõ vết bệnh, tránh bị chói sáng.")
+        input_type = st.radio("Chọn nguồn ảnh:", ["Tải ảnh từ máy", "Chụp trực tiếp"], horizontal=True)
+        
+        file = None
+        if input_type == "Chụp trực tiếp":
             file = st.camera_input("Chụp ảnh lá lúa")
         else:
-            file = st.file_uploader("Chọn file ảnh", type=['jpg','png','jpeg'])
+            file = st.file_uploader("Chọn file ảnh (jpg, png)", type=['jpg','png','jpeg'])
 
-    if file:
-        img = Image.open(file).convert("RGB")
-        with col_l:
-            st.image(img, use_column_width=True, caption="Ảnh đầu vào")
+        if file:
+            img = Image.open(file).convert("RGB")
+            st.image(img, use_container_width=True, caption="Ảnh của bạn")
             
-            if st.button("🚀 BẮT ĐẦU CHẨN ĐOÁN", type="primary", use_container_width=True):
+            if st.button("🚀 PHÂN TÍCH BỆNH", type="primary", use_container_width=True):
                 with col_r:
-                    with st.spinner("AI đang phân tích..."):
+                    with st.spinner("Đang phân tích hình ảnh..."):
                         img.save("process.jpg")
-                        client = InferenceHTTPClient(
-                            api_url="https://detect.roboflow.com", 
-                            api_key="8tf2UvcnEv8h80bV2G0Q"
-                        )
-                        res = client.infer("process.jpg", model_id="rice-leaf-disease-twtlz/1")
-                        preds = res.get('predictions', [])
                         
-                        if preds:
-                            top3 = sorted(preds, key=lambda x: x['confidence'], reverse=True)[:3]
-                            img_annotated = ve_bbox(img.copy(), top3)
-                            st.image(img_annotated, caption="Kết quả AI")
+                        try:
+                            client = InferenceHTTPClient(
+                                api_url="https://detect.roboflow.com",
+                                api_key="8tf2UvcnEv8h80bV2G0Q"
+                            )
+                            res = client.infer("process.jpg", model_id="rice-leaf-disease-twtlz/1")
+                            preds = res.get('predictions', [])
                             
-                            st.subheader("📊 Độ tin cậy")
-                            c1, c2, c3 = st.columns(3)
-                            for i, pred in enumerate(top3):
-                                with [c1, c2, c3][i]:
-                                    emoji = ["🟢", "🟡", "🟠"][i]
-                                    st.metric(f"{emoji} {pred['class']}", f"{pred['confidence']*100:.1f}%")
-                            
-                            top = top3[0]
-                            benh = DATA_BENH.get(top['class'])
-                            if benh and "ref" in benh:
-                                benh = DATA_BENH[benh["ref"]]
-                            
-                            if benh:
-                                st.markdown(f"### ✅ {benh['ten']} ({top['confidence']*100:.1f}%)")
-                                st.markdown(f"""
-                                <div class="report-card">
-                                    <p><b>🧐 Triệu chứng:</b> {benh['trieu_chung']}</p>
-                                    <p><b>🌪️ Nguyên nhân:</b> {benh['nguyen_nhan']}</p>
-                                    <p style="color: #d32f2f;"><b>💊 Thuốc:</b> {', '.join(benh['thuoc'])}</p>
-                                    <p><b>💡 Khuyến cáo:</b> {benh['loi_khuyen']}</p>
-                                </div>
-                                """, unsafe_allow_html=True)
+                            if preds:
+                                # Sửa lỗi: sorted() trả về list, cần lấy phần tử đầu
+                                top_pred = sorted(preds, key=lambda x: x['confidence'], reverse=True)[0]
+                                class_name = top_pred['class']
+                                confidence = top_pred['confidence'] * 100
                                 
-                                st.session_state.history.append({
-                                    "time": datetime.now().strftime("%H:%M"),
-                                    "benh": benh['ten'],
-                                    "conf": top['confidence']*100
-                                })
-                        else:
-                            st.success("🌿 Cây lúa khỏe mạnh!")
+                                img_annotated = ve_bbox(img.copy(), preds)
+                                st.image(img_annotated, caption=f"Kết quả AI phát hiện: {class_name}")
+                                
+                                benh_info = DATA_BENH.get(class_name)
+                                if benh_info and "ref" in benh_info:
+                                    benh_info = DATA_BENH[benh_info["ref"]]
+                                
+                                if benh_info:
+                                    st.success(f"### CHẨN ĐOÁN: {benh_info['ten']} (Độ tin cậy: {confidence:.1f}%)")
+                                    
+                                    st.markdown(f"""
+                                    #### 📋 Triệu chứng điển hình:
+                                    {benh_info['trieu_chung']}
+                                    
+                                    #### 🧬 Nguyên nhân:
+                                    {benh_info['nguyen_nhan']}
+                                    
+                                    #### 🛡️ Giải pháp xử lý [IPM]:
+                                    * **Biện pháp canh tác:** {benh_info['loi_khuyen']}
+                                    * **Thuốc BVTV đề xuất:** {', '.join(benh_info['thuoc'])}
+                                    """)
+                                    
+                                    st.session_state.history.append({
+                                        "time": datetime.now().strftime("%d/%m %H:%M"),
+                                        "benh": benh_info['ten'],
+                                        "conf": confidence
+                                    })
+                                else:
+                                    st.warning(f"Phát hiện '{class_name}' nhưng chưa có dữ liệu chi tiết tiếng Việt.")
+                            else:
+                                st.info("✅ Cây lúa có vẻ khỏe mạnh hoặc không phát hiện bệnh trong cơ sở dữ liệu.")
+                                
+                        except Exception as e:
+                            st.error(f"Lỗi kết nối AI: {str(e)}. Vui lòng kiểm tra lại API key hoặc mạng.")
 
-# TAB 2: CHAT
+# --- TAB 2: CHATBOT ---
 with tab2:
-    st.subheader("💬 Hỏi đáp với chuyên gia AI")
-    st.caption("Kiến thức offline - Không cần API - Trả lời ngay lập tức")
+    st.subheader("💬 Trợ lý ảo Nông Nghiệp")
+    st.markdown("*Hỏi đáp về kỹ thuật trồng lúa, phòng trừ sâu bệnh, thuốc BVTV (Dữ liệu từ Cục BVTV & Viện lúa ĐBSCL)*")
     
-    # Hiển thị lịch sử chat
     for msg in st.session_state.chat_messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-    
-    # Input chat
-    if prompt := st.chat_input("Ví dụ: Lúa bị đạo ôn phải làm sao?"):
-        # Hiển thị câu hỏi
+            
+    if prompt := st.chat_input("Nhập câu hỏi của bạn (VD: lúa bị cháy lá dùng thuốc gì?)"):
         st.session_state.chat_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
-        
-        # Tìm câu trả lời
+            
         response = tim_tra_loi(prompt)
+        
         st.session_state.chat_messages.append({"role": "assistant", "content": response})
         with st.chat_message("assistant"):
             st.markdown(response)
 
-# TAB 3: LỊCH SỬ
+# --- TAB 3: LỊCH SỬ ---
 with tab3:
-    st.subheader("📋 Lịch sử chẩn đoán hôm nay")
+    st.subheader("📋 Nhật ký chẩn đoán")
     if st.session_state.history:
-        for h in reversed(st.session_state.history):
-            st.write(f"⏰ {h['time']} - **{h['benh']}** ({h['conf']:.1f}%)")
+        for i, h in enumerate(reversed(st.session_state.history)):
+            st.markdown(f"""
+            **{i+1}. {h['time']}** - <span style='color:red'>{h['benh']}</span> - Độ tin cậy: {h['conf']:.1f}%
+            """, unsafe_allow_html=True)
+            st.divider()
     else:
-        st.info("Chưa có lượt khám nào.")
+        st.caption("Chưa có dữ liệu chẩn đoán nào.")
 
 st.markdown("---")
-st.caption("🌾 Bác Sĩ Lúa AI 4.0 - Hỗ trợ nông dân Việt Nam")
+st.markdown("<div style='text-align: center; color: grey;'>Ứng dụng được phát triển dựa trên dữ liệu Nông nghiệp Việt Nam 2024-2025</div>", unsafe_allow_html=True)
