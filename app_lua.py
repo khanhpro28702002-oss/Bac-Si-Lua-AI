@@ -296,3 +296,107 @@ with t2:
                     st.error("Dạ, mạng hơi yếu bà con đợi xíu!")
             else:
                 st.warning("Bà con chưa dán API Key của Gemini!")
+import streamlit as st
+import google.generativeai as genai
+from inference_sdk import InferenceHTTPClient
+from PIL import Image
+import requests
+from streamlit_js_eval import get_geolocation
+from gtts import gTTS
+from fpdf import FPDF
+from datetime import datetime
+
+# ==========================================
+# 1. CẤU HÌNH BỘ NÃO AI (GEMINI)
+# ==========================================
+# THAY API KEY CỦA BẠN VÀO GIỮA DẤU ""
+API_KEY_GEMINI = "AIzaSyBFYtJFvAAiR3DqqcNtw1-3gHHe2g-2eXA"
+
+# Khởi tạo AI an toàn
+try:
+    genai.configure(api_key=API_KEY_GEMINI)
+    model_ai = genai.GenerativeModel('gemini-1.5-flash')
+except:
+    model_ai = None
+
+st.set_page_config(page_title="Bác Sĩ Lúa AI", layout="wide")
+
+# ==========================================
+# 2. XỬ LÝ GPS AN TOÀN (CHỐNG KEYERROR)
+# ==========================================
+st.markdown("<h1 style='color: #2e7d32;'>🌾 BÁC SĨ LÚA AI</h1>", unsafe_allow_html=True)
+
+# Lấy vị trí với key duy nhất để tránh lỗi DuplicateElementKey
+#
+loc = get_geolocation(key='gps_standard')
+
+st.subheader("🌦️ Dự báo thời tiết")
+# Kiểm tra dữ liệu GPS trước khi truy cập để tránh KeyError
+if loc and 'coords' in loc:
+    try:
+        lat = loc['coords'].get('latitude')
+        lon = loc['coords'].get('longitude')
+        if lat and lon:
+            w_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m&timezone=auto"
+            res = requests.get(w_url).json()
+            st.success(f"📍 Vị trí: {lat}, {lon}")
+            st.metric("🌡️ Nhiệt độ", f"{res['current']['temperature_2m']}°C")
+    except:
+        st.write("Đang kết nối trạm khí tượng...")
+else:
+    st.info("📌 Bà con vui lòng chọn 'Cho phép' (Allow) vị trí để xem thời tiết.")
+
+st.markdown("---")
+
+# ==========================================
+# 3. CHỨC NĂNG CHÍNH (TABS)
+# ==========================================
+t1, t2 = st.tabs(["📸 CHẨN ĐOÁN BỆNH", "💬 HỎI ĐÁP AI"])
+
+with t1:
+    c_l, c_r = st.columns([1, 1.2])
+    with c_l:
+        f = st.file_uploader("Chọn ảnh lá lúa", type=['jpg','png','jpeg'])
+        if f:
+            img = Image.open(f)
+            st.image(img, use_column_width=True)
+            if st.button("🔍 BẮT ĐẦU SOI BỆNH", type="primary", use_container_width=True):
+                with c_r:
+                    with st.spinner("AI đang làm việc..."):
+                        img.save("test.jpg")
+                        # Roboflow API
+                        client = InferenceHTTPClient(api_url="https://detect.roboflow.com", api_key="8tf2UvcnEv8h80bV2G0Q")
+                        res = client.infer("test.jpg", model_id="rice-leaf-disease-twtlz/1")
+                        preds = res.get('predictions', [])
+                        
+                        if preds:
+                            benh = preds[0]['class']
+                            st.error(f"⚠️ Phát hiện: {benh}")
+                            if model_ai:
+                                p = f"Lúa bị bệnh {benh}. Hãy tư vấn thuốc trị cụ thể ở Việt Nam."
+                                st.write(model_ai.generate_content(p).text)
+                        else:
+                            st.success("🌿 Cây lúa khỏe mạnh!")
+
+with t2:
+    if 'chat_history' not in st.session_state:
+        st.session_state['chat_history'] = []
+    
+    # Hiển thị hội thoại
+    for m in st.session_state.chat_history:
+        with st.chat_message(m["role"]): st.write(m["content"])
+    
+    if query := st.chat_input("Hỏi tôi về lúa..."):
+        st.session_state.chat_history.append({"role": "user", "content": query})
+        with st.chat_message("user"): st.write(query)
+        
+        with st.chat_message("assistant"):
+            if model_ai:
+                try:
+                    ans = model_ai.generate_content(query).text
+                    st.write(ans)
+                    st.session_state.chat_history.append({"role": "assistant", "content": ans})
+                except:
+                    st.error("Dạ, mạng hơi yếu bà con đợi xíu!")
+            else:
+                st.warning("Bà con chưa dán API Key Gemini vào code!")
