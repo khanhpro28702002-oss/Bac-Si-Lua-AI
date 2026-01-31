@@ -27,22 +27,83 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+import streamlit.components.v1 as components
+
 # Khởi tạo session state
 if 'history' not in st.session_state:
     st.session_state['history'] = []
 if 'chat_messages' not in st.session_state:
     st.session_state['chat_messages'] = []
+if 'location' not in st.session_state:
+    st.session_state['location'] = None
+
+# ==============================================================================
+# HÀM LẤY VỊ TRÍ NGƯỜI DÙNG (Browser Geolocation)
+# ==============================================================================
+
+def request_user_location():
+    """Gửi yêu cầu xin quyền truy cập vị trí từ trình duyệt"""
+    st.markdown("### 📍 Tự động lấy vị trí...")
+    
+    # HTML/JS để lấy tọa độ và gửi về Streamlit qua query params (hoặc callback)
+    # Ở đây dùng giải thuật đơn giản: JS lấy được thì chuyển hướng URL kèm tọa độ
+    # Hoặc dùng st.components để post message (phức tạp hơn)
+    # Cách đơn giản: Dùng thành phần HTML có nút "Cập nhật vị trí"
+    
+    loc_js = """
+    <script>
+    function getLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(showPosition, showError);
+      } else { 
+        window.parent.postMessage({type: 'location_error', error: "Trình duyệt không hỗ trợ Geolocation"}, "*");
+      }
+    }
+
+    function showPosition(position) {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+      window.parent.postMessage({
+        type: 'location_success',
+        lat: lat,
+        lon: lon
+      }, "*");
+    }
+
+    function showError(error) {
+      window.parent.postMessage({type: 'location_error', error: error.message}, "*");
+    }
+    
+    // Tự động gọi khi load
+    getLocation();
+    </script>
+    <div style="font-family: sans-serif; font-size: 12px; color: #666;">
+        Đang xác định vị trí...
+    </div>
+    """
+    
+    # Render component
+    components.html(loc_js, height=30)
+
+# Lắng nghe sự kiện từ JS (Lưu ý: Streamlit chính chủ không bắt được postMessage trực tiếp vào session_state dễ dàng
+# mà không qua custom component. Tôi sẽ dùng cách tiếp cận thực tế hơn cho Streamlit: st_javascript nếu có,
+# hoặc đơn giản là IP-based nếu browser geolocation quá khó trong môi trường này.
+# NHƯNG người dùng muốn "xin cấp quyền", nên tôi sẽ dùng 1 button JS.)
 
 # ==============================================================================
 # HÀM LẤY THÔNG TIN THỜI TIẾT THANH HÓA
 # ==============================================================================
 
-def lay_thoi_tiet(city="CanTho"):
+def lay_thoi_tiet(city="CanTho", lat=None, lon=None):
     """Lấy thông tin thời tiết từ API OpenWeatherMap"""
     try:
         # API key miễn phí (bạn nên đăng ký key riêng tại openweathermap.org)
         api_key = "c7debdc7ac4deefb232ab3da884f152d"  # Thay bằng key của bạn
-        url = f"http://api.openweathermap.org/data/2.5/weather?q={city},VN&appid={api_key}&units=metric&lang=vi"
+        
+        if lat and lon:
+            url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric&lang=vi"
+        else:
+            url = f"http://api.openweathermap.org/data/2.5/weather?q={city},VN&appid={api_key}&units=metric&lang=vi"
         
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
@@ -1176,7 +1237,15 @@ def tim_tra_loi(cau_hoi):
     
     # Kiểm tra yêu cầu thời tiết
     if any(word in cau_hoi for word in ["thời tiết", "nhiệt độ", "độ ẩm", "mưa", "gió", "khí hậu"]):
-        thoi_tiet = lay_thoi_tiet()
+        params = st.query_params
+        lat = params.get("lat")
+        lon = params.get("lon")
+        
+        if lat and lon:
+            thoi_tiet = lay_thoi_tiet(lat=lat, lon=lon)
+        else:
+            thoi_tiet = lay_thoi_tiet()
+            
         return f"""🌤️ **THÔNG TIN THỜI TIẾT {thoi_tiet['thanh_pho'].upper()}**
         
 📍 **Vị trí:** {thoi_tiet['thanh_pho']}, Việt Nam
@@ -1296,90 +1365,46 @@ DATA_HINH_ANH.update({
 })
 
 def ve_bbox_voi_confidence(img, predictions):
-    """Vẽ bounding box VÀ hiển thị tỉ lệ chính xác lên ảnh"""
+    """Vẽ bounding box VÀ hiển thị tỉ lệ chính xác lên ảnh (To hơn, không hiện tên)"""
     draw = ImageDraw.Draw(img)
     width, height = img.size
     
-    # Thử load font từ Windows hoặc linux, nếu không được dùng mặc định
+    # Load font to hơn cho %
     try:
-        # Đường dẫn font phổ biến trên Windows
         font_path = "C:/Windows/Fonts/arial.ttf"
-        font = ImageFont.truetype(font_path, 24)
-        font_small = ImageFont.truetype(font_path, 18)
+        font_big = ImageFont.truetype(font_path, 36) # Tăng size lên 36
     except:
         try:
-            # Dự phòng cho Linux/Docker
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
-            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+            font_big = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
         except:
-            font = ImageFont.load_default()
-            font_small = ImageFont.load_default()
+            font_big = ImageFont.load_default()
         
-    # Vẽ cho tất cả predictions (tối đa 3)
     for i, pred in enumerate(predictions[:3]):
         conf = pred['confidence'] * 100
-        if conf < 30:  # Giảm ngưỡng để hiển thị nhiều hơn nếu cần
+        if conf < 30:
             continue 
         
-        class_name = pred['class']
-        # Lấy tên tiếng Việt nếu có
-        viet_name = DATA_HINH_ANH.get(class_name, {}).get('ten_viet')
-        if not viet_name:
-            # Kiểm tra ref
-            ref = DATA_HINH_ANH.get(class_name, {}).get('ref')
-            if ref:
-                viet_name = DATA_HINH_ANH.get(ref, {}).get('ten_viet', class_name)
-            else:
-                viet_name = class_name
-                
-        label = f"{viet_name}"
         confidence_label = f"{conf:.1f}%"
         
-        # Tọa độ bounding box
-        x = pred.get('x', 0)
-        y = pred.get('y', 0)
-        w = pred.get('width', 100)
-        h = pred.get('height', 100)
+        # Tọa độ
+        x, y, w, h = pred.get('x', 0), pred.get('y', 0), pred.get('width', 100), pred.get('height', 100)
+        x0, y0, x1, y1 = int(x - w/2), int(y - h/2), int(x + w/2), int(y + h/2)
+        x0, y0, x1, y1 = max(0, x0), max(0, y0), min(width, x1), min(height, y1)
         
-        x0 = int(x - w/2)
-        y0 = int(y - h/2)
-        x1 = int(x + w/2)
-        y1 = int(y + h/2)
-        
-        # Đảm bảo box nằm trong ảnh
-        x0 = max(0, x0)
-        y0 = max(0, y0)
-        x1 = min(width, x1)
-        y1 = min(height, y1)
-        
-        # Chọn màu theo độ tin cậy
-        if conf >= 80:
-            color = "#00ff00"  # Xanh lá - Tin cậy cao
-        elif conf >= 60:
-            color = "#ffff00"  # Vàng - Tin cậy trung bình
-        else:
-            color = "#ff0000"  # Đỏ - Tin cậy thấp
+        # Màu theo độ tin cậy
+        color = "#00ff00" if conf >= 80 else "#ffff00" if conf >= 60 else "#ff0000"
         
         # Vẽ khung
-        draw.rectangle([x0, y0, x1, y1], outline=color, width=4)
+        draw.rectangle([x0, y0, x1, y1], outline=color, width=5) # Khung dầy hơn chút
         
-        # Tính toán vị trí text (tránh bị tràn lên trên ảnh)
-        text_y = y0 - 55 if y0 > 60 else y1 + 5
-        
-        # Vẽ label (tên bệnh)
+        # Vẽ nhãn % TO
+        text_y = y0 - 45 if y0 > 50 else y1 + 5
         try:
-            bbox_label = draw.textbbox((x0, text_y), label, font=font)
-            draw.rectangle(bbox_label, fill=color)
-            draw.text((x0, text_y), label, fill="black", font=font)
-            
-            # Vẽ confidence (tỉ lệ %) ngay dưới label
-            conf_y = text_y + 28
-            bbox_conf = draw.textbbox((x0, conf_y), confidence_label, font=font_small)
-            draw.rectangle(bbox_conf, fill="white")
-            draw.text((x0, conf_y), confidence_label, fill=color, font=font_small)
+            bbox_conf = draw.textbbox((x0, text_y), confidence_label, font=font_big)
+            draw.rectangle(bbox_conf, fill=color)
+            draw.text((x0, text_y), confidence_label, fill="black", font=font_big)
         except:
-            # Fallback nếu textbbox lỗi (với font default)
-            draw.text((x0, text_y), f"{label} {confidence_label}", fill=color)
+            draw.text((x0, text_y), confidence_label, fill=color)
         
     return img
 
@@ -1393,7 +1418,32 @@ st.caption("Hệ thống chẩn đoán và tư vấn phòng trừ bệnh hại l
 # Hiển thị thời tiết ở sidebar
 with st.sidebar:
     st.markdown("### 🌤️ THỜI TIẾT")
-    thoi_tiet = lay_thoi_tiet()
+    
+    # Thành phần yêu cầu vị trí (ẩn bên dưới)
+    if st.button("📍 Cập nhật vị trí hiện tại"):
+        components.html("""
+            <script>
+            navigator.geolocation.getCurrentPosition(function(position) {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+                const url = new URL(window.parent.location.href);
+                url.searchParams.set('lat', lat);
+                url.searchParams.set('lon', lon);
+                window.parent.location.href = url.href;
+            });
+            </script>
+        """, height=0)
+    
+    # Đọc tọa độ từ query params
+    params = st.query_params
+    lat = params.get("lat")
+    lon = params.get("lon")
+    
+    if lat and lon:
+        thoi_tiet = lay_thoi_tiet(lat=lat, lon=lon)
+    else:
+        thoi_tiet = lay_thoi_tiet(city="CanTho")
+        
     st.markdown(f"""
     <div class="weather-box">
         <h4 style='color: white; margin: 0;'>📍 {thoi_tiet['thanh_pho']}</h4>
