@@ -68,18 +68,13 @@ def ve_bbox_len_anh(img, predictions):
     except:
         font = ImageFont.load_default()
     
-    for pred in predictions[:3]:  # Top 3
+    for pred in predictions[:3]:
         conf = pred['confidence'] * 100
         label = f"{pred['class']}: {conf:.1f}%"
-        
-        # Vị trí text (góc trên trái)
         x, y = 20, 20 + predictions.index(pred) * 40
-        
-        # Background cho text
         bbox = draw.textbbox((x, y), label, font=font)
         draw.rectangle(bbox, fill=(0, 128, 0, 200))
         draw.text((x, y), label, fill=(255, 255, 255), font=font)
-    
     return img
 
 st.markdown("<h1>🌾 BÁC SĨ LÚA AI 4.0</h1>", unsafe_allow_html=True)
@@ -103,19 +98,26 @@ with tab1:
     col_l, col_r = st.columns([1, 1.3])
     with col_l:
         st.subheader("Chụp/Tải ảnh lá lúa")
-        file = st.camera_input("Camera") or st.file_uploader("Tải ảnh", type=['jpg','png'])
+        
+        # CHỌN NGUỒN CAMERA HOẶC TẢI ẢNH
+        input_type = st.radio("Chọn nguồn:", ["Tải ảnh từ máy", "Chụp bằng Camera"], horizontal=True)
+        
+        if input_type == "Chụp bằng Camera":
+            file = st.camera_input("Chụp ảnh lá lúa")
+        else:
+            file = st.file_uploader("Chọn file ảnh", type=['jpg','png','jpeg'])
 
     if file:
         img = Image.open(file).convert("RGB")
         with col_l:
-            st.image(img, caption="Ảnh gốc")
+            st.image(img, caption="Ảnh gốc", use_column_width=True)
             
-            if st.button("🚀 CHẨN ĐOÁN", type="primary"):
+            if st.button("🚀 BẮT ĐẦU CHẨN ĐOÁN", type="primary", use_container_width=True):
                 with col_r:
-                    with st.spinner("AI đang phân tích từ model Roboflow của bạn..."):
+                    with st.spinner("AI đang phân tích từ model Roboflow..."):
                         img.save("process.jpg")
                         
-                        # GỌI MODEL ROBOFLOW CỦA BẠN
+                        # GỌI MODEL ROBOFLOW
                         client = InferenceHTTPClient(
                             api_url="https://detect.roboflow.com", 
                             api_key="8tf2UvcnEv8h80bV2G0Q"
@@ -127,14 +129,13 @@ with tab1:
                             preds = [{"class": k, "confidence": v['confidence']} for k, v in preds.items()]
 
                         if preds:
-                            # Sắp xếp top 3
                             top3 = sorted(preds, key=lambda x: x['confidence'], reverse=True)[:3]
                             
                             # VẼ % LÊN ẢNH
                             img_annotated = ve_bbox_len_anh(img.copy(), top3)
-                            st.image(img_annotated, caption="Kết quả AI")
+                            st.image(img_annotated, caption="Kết quả AI với % Confidence")
                             
-                            # HIỂN THỊ METRIC
+                            # HIỂN THỊ TOP 3
                             st.subheader("📊 Độ tin cậy từ Model Roboflow")
                             c1, c2, c3 = st.columns(3)
                             for i, pred in enumerate(top3):
