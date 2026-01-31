@@ -200,3 +200,99 @@ if p := st.chat_input("Hỏi gì đi bà con..."):
             st.session_state.chat_history.append({"role": "assistant", "content": response.text})
         except Exception as e:
             st.error(f"Lỗi kết nối AI: {e}")
+import streamlit as st
+import google.generativeai as genai
+from inference_sdk import InferenceHTTPClient
+from PIL import Image
+import requests
+from streamlit_js_eval import get_geolocation
+
+# ==========================================
+# 1. CẤU HÌNH BỘ NÃO AI (GEMINI)
+# ==========================================
+# DÁN MÃ API KEY CỦA BẠN VÀO GIỮA DẤU NGOẶC KÉP DƯỚI ĐÂY
+API_KEY_GEMINI = "DÁN_MÃ_API_KEY_CỦA_BẠN_VÀO_ĐÂY"
+
+if API_KEY_GEMINI != "DÁN_MÃ_API_KEY_CỦA_BẠN_VÀO_ĐÂY":
+    genai.configure(api_key=API_KEY_GEMINI)
+    model_ai = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    model_ai = None
+
+st.set_page_config(page_title="Bác Sĩ Lúa AI", layout="wide")
+
+# ==========================================
+# 2. KIỂM TRA GPS AN TOÀN (CHỐNG LỖI KEYERROR)
+# ==========================================
+st.markdown("<h1 style='color: #2e7d32;'>🌾 BÁC SĨ LÚA AI</h1>", unsafe_allow_html=True)
+
+# Đặt key cố định để tránh lỗi DuplicateElementKey
+loc = get_geolocation(key='gps_fix')
+
+st.subheader("🌦️ Thời Tiết Tại Ruộng")
+if loc and 'coords' in loc:
+    try:
+        lat = loc['coords'].get('latitude')
+        lon = loc['coords'].get('longitude')
+        if lat and lon:
+            st.success(f"📍 Đã xác định vị trí: {lat}, {lon}")
+            w_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m&timezone=auto"
+            res = requests.get(w_url).json()
+            st.metric("🌡️ Nhiệt độ", f"{res['current']['temperature_2m']}°C")
+    except:
+        st.write("Đang lấy dữ liệu thời tiết...")
+else:
+    st.info("📌 Bà con hãy bấm 'Cho phép' (Allow) vị trí để xem thời tiết nhé!")
+
+st.markdown("---")
+
+# ==========================================
+# 3. CHỨC NĂNG CHÍNH (TABS)
+# ==========================================
+t1, t2 = st.tabs(["📸 CHẨN ĐOÁN BỆNH", "💬 HỎI ĐÁP AI"])
+
+with t1:
+    col_l, col_r = st.columns([1, 1.2])
+    with col_l:
+        f = st.file_uploader("Chọn ảnh lá lúa", type=['jpg','png','jpeg'])
+        if f:
+            img = Image.open(f)
+            st.image(img, use_column_width=True)
+            if st.button("🔍 PHÂN TÍCH", type="primary", use_container_width=True):
+                with col_r:
+                    with st.spinner("Đang soi bệnh..."):
+                        img.save("t.jpg")
+                        # Gọi Roboflow (Mắt thần)
+                        client = InferenceHTTPClient(api_url="https://detect.roboflow.com", api_key="8tf2UvcnEv8h80bV2G0Q")
+                        res = client.infer("t.jpg", model_id="rice-leaf-disease-twtlz/1")
+                        preds = res.get('predictions', [])
+                        if preds:
+                            benh = preds[0]['class']
+                            st.error(f"⚠️ Phát hiện: {benh}")
+                            if model_ai:
+                                p = f"Lúa bị bệnh {benh}. Tư vấn tên tiếng Việt và thuốc trị."
+                                st.write(model_ai.generate_content(p).text)
+                        else:
+                            st.success("✅ Cây lúa khỏe mạnh!")
+
+with t2:
+    if 'chat_history' not in st.session_state:
+        st.session_state['chat_history'] = []
+    
+    for m in st.session_state.chat_history:
+        with st.chat_message(m["role"]): st.write(m["content"])
+    
+    if query := st.chat_input("Hỏi tôi về lúa gạo..."):
+        st.session_state.chat_history.append({"role": "user", "content": query})
+        with st.chat_message("user"): st.write(query)
+        
+        with st.chat_message("assistant"):
+            if model_ai:
+                try:
+                    ans = model_ai.generate_content(query).text
+                    st.write(ans)
+                    st.session_state.chat_history.append({"role": "assistant", "content": ans})
+                except:
+                    st.error("Dạ, mạng hơi yếu bà con đợi xíu!")
+            else:
+                st.warning("Bà con chưa dán API Key của Gemini!")
