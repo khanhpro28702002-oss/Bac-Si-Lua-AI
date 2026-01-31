@@ -1378,4 +1378,161 @@ with tab1:
     col_l, col_r = st.columns([1, 1.2])
     
     with col_l:
-        st.subheader("📸 Tải ảnh lá l)
+        st.subheader("📸 Tải ảnh lá lúa bệnh")
+        
+        # Chọn nguồn ảnh
+        input_method = st.radio(
+            "Chọn nguồn ảnh:",
+            ["📤 Tải lên từ máy", "📷 Chụp ảnh trực tiếp"],
+            horizontal=True
+        )
+        
+        uploaded_file = None
+        if input_method == "📷 Chụp ảnh trực tiếp":
+            uploaded_file = st.camera_input("Chụp ảnh lá lúa")
+        else:
+            uploaded_file = st.file_uploader(
+                "Chọn ảnh lá lúa",
+                type=['jpg', 'jpeg', 'png'],
+                help="Hỗ trợ: JPG, PNG"
+            )
+        
+        if uploaded_file is not None:
+            # Hiển thị ảnh gốc
+            image = Image.open(uploaded_file).convert("RGB")
+            st.image(image, caption="✅ Ảnh đã tải lên", use_container_width=True)
+            
+            # Nút phân tích
+            if st.button("🔍 PHÂN TÍCH BỆNH (ROBOFLOW)", type="primary", use_container_width=True):
+                with col_r:
+                    with st.spinner("🤖 Đang phân tích bằng Roboflow AI..."):
+                        # Lưu ảnh tạm
+                        image.save("temp_image.jpg")
+                        
+                        # Gọi API Roboflow
+                        try:
+                            client = InferenceHTTPClient(
+                                api_url="https://detect.roboflow.com",
+                                api_key="8tf2UvcnEv8h80bV2G0Q"
+                            )
+                            
+                            result = client.infer("temp_image.jpg", model_id="rice-leaf-disease-twtlz/1")
+                            predictions = result.get('predictions', [])
+                            
+                            if len(predictions) > 0:
+                                # Lấy kết quả có confidence cao nhất
+                                top_prediction = sorted(predictions, key=lambda x: x['confidence'], reverse=True)[0]
+                                
+                                # Vẽ bounding box lên ảnh
+                                img_with_bbox = ve_bbox_voi_confidence(image.copy(), predictions)
+                                st.image(img_with_bbox, caption="✅ Kết quả phân tích (% trên ảnh)", use_container_width=True)
+                                
+                                # Lấy thông tin bệnh
+                                class_name = top_prediction['class']
+                                confidence = top_prediction['confidence'] * 100
+                                
+                                disease_info = DATA_HINH_ANH.get(class_name, {})
+                                
+                                # Hiển thị kết quả
+                                st.success(f"### 🎯 {disease_info.get('ten_viet', class_name)}")
+                                st.metric("📊 Độ chính xác", f"{confidence:.1f}%")
+                                
+                                if confidence >= 75:
+                                    st.success("✅ Kết quả đáng tin cậy")
+                                elif confidence >= 55:
+                                    st.warning("⚠️ Kết quả khá chắc - Nên kiểm tra thêm")
+                                else:
+                                    st.error("❌ Kết quả không chắc chắn - Cần chuyên gia")
+                                
+                                # Thông tin chi tiết
+                                with st.expander("📖 THÔNG TIN CHI TIẾT", expanded=True):
+                                    st.markdown(f"**🔬 Tên khoa học:** {disease_info.get('ten_khoa_hoc', 'N/A')}")
+                                    st.markdown(f"**📝 Mô tả:** {disease_info.get('mo_ta_ngan', 'N/A')}")
+                                    st.markdown(disease_info.get('xu_ly_cap_cuu', ''))
+                                
+                                st.info(f"💊 **Thuốc đặc trị:** {disease_info.get('thuoc_dac_tri', 'Liên hệ chuyên gia')}")
+                                st.warning(f"⚠️ **Lưu ý:** {disease_info.get('luu_y', '')}")
+                                
+                                # Lưu lịch sử
+                                st.session_state['history'].append({
+                                    "time": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+                                    "result": f"{disease_info.get('ten_viet', class_name)} ({confidence:.1f}%)"
+                                })
+                            
+                            else:
+                                st.success("### ✅ LÁ LÚA KHỎE MẠNH!")
+                                st.balloons()
+                                st.info("Không phát hiện bệnh. Tiếp tục theo dõi và chăm sóc tốt!")
+                        
+                        except Exception as e:
+                            st.error(f"❌ Lỗi kết nối Roboflow: {str(e)}")
+                            st.info("Vui lòng kiểm tra kết nối mạng hoặc API key")
+
+# --- TAB 2: CHATBOT TƯ VẤN ---
+with tab2:
+    st.subheader("💬 Chatbot tư vấn bệnh lúa")
+    st.caption("Hỏi về: Đạo ôn, Khô vằn, Bạc lá, Lem lép hạt, Vàng lùn, Đốm nâu...")
+    
+    # Hiển thị lịch sử chat
+    for message in st.session_state['chat_messages']:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+    
+    # Input chat
+    if prompt := st.chat_input("Hỏi về bệnh lúa... (VD: Đạo ôn là gì? Cách trị khô vằn?)"):
+        # Thêm câu hỏi của user
+        st.session_state['chat_messages'].append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        
+        # Tìm câu trả lời
+        with st.chat_message("assistant"):
+            response = tim_tra_loi_chat(prompt)
+            st.markdown(response)
+            st.session_state['chat_messages'].append({"role": "assistant", "content": response})
+
+# --- TAB 3: LỊCH SỬ ---
+with tab3:
+    st.subheader("📋 Lịch sử chẩn đoán")
+    
+    if len(st.session_state['history']) > 0:
+        st.success(f"✅ Đã chẩn đoán {len(st.session_state['history'])} lần")
+        
+        # Hiển thị bảng lịch sử
+        history_df = pd.DataFrame(st.session_state['history'])
+        st.dataframe(
+            history_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "time": "Thời gian",
+                "result": "Kết quả"
+            }
+        )
+        
+        # Nút xóa lịch sử
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("🗑️ Xóa toàn bộ lịch sử", use_container_width=True):
+                st.session_state['history'] = []
+                st.rerun()
+    else:
+        st.info("📭 Chưa có lịch sử chẩn đoán. Hãy thử chẩn đoán ảnh ở Tab 1!")
+
+# --- FOOTER ---
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; color: #666; padding: 20px;'>
+    <p>🌾 <strong>Chuyên Gia Bệnh Lúa AI - Thanh Hóa 2026</strong></p>
+    <p>🤖 Powered by <strong>Roboflow Object Detection</strong> | 🌐 OpenWeatherMap API</p>
+    <p style='font-size: 12px; margin-top: 10px;'>
+        ⚠️ <em>Kết quả chỉ mang tính chất tham khảo. Nên tham khảo ý kiến chuyên gia nông nghiệp địa phương.</em>
+    </p>
+    <p style='font-size: 11px; color: #999; margin-top: 5px;'>
+        📧 Liên hệ hỗ trợ: <strong>chuyen-gia-lua-ai@thanhhoa.gov.vn</strong>
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# --- KẾT THÚC CODE ---
+
