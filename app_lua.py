@@ -40,7 +40,7 @@ def lay_thoi_tiet():
     """Lấy thông tin thời tiết Thanh Hóa từ API OpenWeatherMap"""
     try:
         # API key miễn phí (bạn nên đăng ký key riêng tại openweathermap.org)
-        api_key = "YOUR_API_KEY_HERE"  # Thay bằng key của bạn
+        api_key = "c7debdc7ac4deefb232ab3da884f152d"  # Thay bằng key của bạn
         city = "Thanh Hoa"
         url = f"http://api.openweathermap.org/data/2.5/weather?q={city},VN&appid={api_key}&units=metric&lang=vi"
         
