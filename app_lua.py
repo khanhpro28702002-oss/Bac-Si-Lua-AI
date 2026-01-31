@@ -3,6 +3,7 @@ from inference_sdk import InferenceHTTPClient
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 import requests
+import pandas as pd
 
 # Cấu hình trang
 st.set_page_config(page_title="Chuyên Gia Bệnh Lúa AI", page_icon="🌾", layout="wide")
@@ -40,7 +41,7 @@ def lay_thoi_tiet():
     """Lấy thông tin thời tiết Thanh Hóa từ API OpenWeatherMap"""
     try:
         # API key miễn phí (bạn nên đăng ký key riêng tại openweathermap.org)
-        api_key = "YOUR_API_KEY_HERE"  # Thay bằng key của bạn
+        api_key = "c7debdc7ac4deefb232ab3da884f152d"  # Thay bằng key của bạn
         city = "Thanh Hoa"
         url = f"http://api.openweathermap.org/data/2.5/weather?q={city},VN&appid={api_key}&units=metric&lang=vi"
         
@@ -616,8 +617,8 @@ Khô vằn phòng dễ hơn trị. Chìa khóa: **Vệ sinh ruộng + Quản lý
 
 **KẾT LUẬN:**
 Bạc lá vi khuẩn khó trị nhưng dễ phòng. Chìa khóa: **Không thừa đạm + Rút nước khi bệnh + Phun thuốc kháng sinh sớm**.""",
-
-    "lem lép hạt": """⚫ **BỆNH LEM LÉP HẠT (HẠT ĐEN, HẠT LÉP)**
+}
+"lem lép hạt": """⚫ **BỆNH LEM LÉP HẠT (HẠT ĐEN, HẠT LÉP)**
 
 **I. NGUYÊN NHÂN PHỨC HỢP:**
 
@@ -961,7 +962,7 @@ b) **Rice Ragged Stunt Virus (RRSV)** - Virus lùn xoắn lá:
 - **Cách 2**: Đốt (nếu được phép)
 - **KHÔNG**: Ủ compost (virus còn sống lâu)
 
-**Tần suất:** Kiểm tra và nhổ bỏ **LIêN TỤC** suốt vụ
+**Tần suất:** Kiểm tra và nhổ bỏ **LIÊN TỤC** suốt vụ
 
 **B. PHÒNG TRỪ RẦY NÂU (MÔI GIỚI):**
 
@@ -1285,6 +1286,10 @@ DATA_HINH_ANH.update({
     "Hispa": {"ref": "Blast"}
 })
 
+# ==============================================================================
+# HÀM VẼ BOUNDING BOX (ĐÃ SỬA TÊN)
+# ==============================================================================
+
 def ve_bbox_va_ti_le(img, predictions):
     """Vẽ bounding box VÀ hiển thị tỉ lệ chính xác lên ảnh"""
     draw = ImageDraw.Draw(img)
@@ -1372,6 +1377,7 @@ with st.sidebar:
 st.markdown("---")
 
 tab1, tab2, tab3 = st.tabs(["🔍 CHẨN ĐOÁN QUA ẢNH", "💬 CHAT VỚI CHUYÊN GIA", "📋 NHẬT KÝ"])
+
 # --- TAB 1: CHẨN ĐOÁN ---
 with tab1:
     col_l, col_r = st.columns([1, 1.2])
@@ -1422,8 +1428,8 @@ with tab1:
                                 # Lấy kết quả có confidence cao nhất
                                 top_prediction = sorted(predictions, key=lambda x: x['confidence'], reverse=True)[0]
                                 
-                                # Vẽ bounding box lên ảnh
-                                img_with_bbox = ve_bbox_voi_confidence(image.copy(), predictions)
+                                # Vẽ bounding box lên ảnh (ĐÃ SỬA: dùng ve_bbox_va_ti_le)
+                                img_with_bbox = ve_bbox_va_ti_le(image.copy(), predictions)
                                 st.image(img_with_bbox, caption="✅ Kết quả phân tích (% trên ảnh)", use_container_width=True)
                                 
                                 # Lấy thông tin bệnh
@@ -1433,7 +1439,7 @@ with tab1:
                                 disease_info = DATA_HINH_ANH.get(class_name, {})
                                 
                                 # Hiển thị kết quả
-                                st.success(f"### 🎯 {disease_info.get('ten_viet', class_name)}")
+                                st.success(f"### 🎯 {disease_info.get('ten', class_name)}")
                                 st.metric("📊 Độ chính xác", f"{confidence:.1f}%")
                                 
                                 if confidence >= 75:
@@ -1445,17 +1451,14 @@ with tab1:
                                 
                                 # Thông tin chi tiết
                                 with st.expander("📖 THÔNG TIN CHI TIẾT", expanded=True):
-                                    st.markdown(f"**🔬 Tên khoa học:** {disease_info.get('ten_khoa_hoc', 'N/A')}")
-                                    st.markdown(f"**📝 Mô tả:** {disease_info.get('mo_ta_ngan', 'N/A')}")
-                                    st.markdown(disease_info.get('xu_ly_cap_cuu', ''))
-                                
-                                st.info(f"💊 **Thuốc đặc trị:** {disease_info.get('thuoc_dac_tri', 'Liên hệ chuyên gia')}")
-                                st.warning(f"⚠️ **Lưu ý:** {disease_info.get('luu_y', '')}")
+                                    st.markdown(f"**📝 Triệu chứng:** {disease_info.get('trieu_chung', 'N/A')}")
+                                    st.markdown(f"**🔬 Nguyên nhân:** {disease_info.get('nguyen_nhan', 'N/A')}")
+                                    st.markdown(f"**💊 Giải pháp:** {disease_info.get('giai_phap', 'N/A')}")
                                 
                                 # Lưu lịch sử
                                 st.session_state['history'].append({
                                     "time": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                                    "result": f"{disease_info.get('ten_viet', class_name)} ({confidence:.1f}%)"
+                                    "result": f"{disease_info.get('ten', class_name)} ({confidence:.1f}%)"
                                 })
                             
                             else:
@@ -1467,7 +1470,7 @@ with tab1:
                             st.error(f"❌ Lỗi kết nối Roboflow: {str(e)}")
                             st.info("Vui lòng kiểm tra kết nối mạng hoặc API key")
 
-# --- TAB 2: CHATBOT TƯ VẤN ---
+# --- TAB 2: CHATBOT TƯ VẤN (ĐÃ SỬA: dùng tim_tra_loi thay vì tim_tra_loi_chat) ---
 with tab2:
     st.subheader("💬 Chatbot tư vấn bệnh lúa")
     st.caption("Hỏi về: Đạo ôn, Khô vằn, Bạc lá, Lem lép hạt, Vàng lùn, Đốm nâu...")
@@ -1484,9 +1487,9 @@ with tab2:
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Tìm câu trả lời
+        # Tìm câu trả lời (ĐÃ SỬA: dùng tim_tra_loi)
         with st.chat_message("assistant"):
-            response = tim_tra_loi_chat(prompt)
+            response = tim_tra_loi(prompt)
             st.markdown(response)
             st.session_state['chat_messages'].append({"role": "assistant", "content": response})
 
@@ -1532,8 +1535,3 @@ st.markdown("""
     </p>
 </div>
 """, unsafe_allow_html=True)
-
-# --- KẾT THÚC CODE ---
-
-
-
