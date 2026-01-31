@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot AI - Hugging Face</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            background: white;
+            width: 450px;
+            height: 600px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #667eea;
+            color: white;
+            padding: 20px;
+            border-radius: 15px 15px 0 0;
+            text-align: center;
+        }
+        #chatbox {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #f9f9f9;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 12px;
+            border-radius: 10px;
+            max-width: 80%;
+            word-wrap: break-word;
+            animation: fadeIn 0.3s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .user {
+            background: #667eea;
+            color: white;
+            margin-left: auto;
+            text-align: right;
+        }
+        .bot {
+            background: #e8e8e8;
+            color: #333;
+        }
+        .input-area {
+            display: flex;
+            padding: 15px;
+            border-top: 1px solid #ddd;
+            gap: 10px;
+        }
+        #userInput {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 25px;
+            outline: none;
+            font-size: 14px;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        button:hover { background: #5568d3; }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .loading {
+            color: #999;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>🤖 AI Chatbot</h2>
+            <p style="font-size: 12px; margin-top: 5px;">Powered by Hugging Face</p>
+        </div>
+        
+        <div id="chatbox"></div>
+        
+        <div class="input-area">
+            <input type="text" id="userInput" placeholder="Nhập câu hỏi của bạn..." />
+            <button id="sendBtn" onclick="sendMessage()">Gửi</button>
+        </div>
+    </div>
+
+    <script>
+        const chatbox = document.getElementById('chatbox');
+        const input = document.getElementById('userInput');
+        const sendBtn = document.getElementById('sendBtn');
+
+        async function sendMessage() {
+            const message = input.value.trim();
+            if (!message) return;
+
+            // Hiển thị tin nhắn người dùng
+            addMessage(message, 'user');
+            input.value = '';
+            sendBtn.disabled = true;
+
+            // Hiển thị trạng thái đang xử lý
+            const loadingId = addMessage('Đang suy nghĩ...', 'bot loading');
+
+            try {
+                const response = await fetch('http://localhost:5000/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message })
+                });
+
+                const data = await response.json();
+                
+                // Xóa loading và hiển thị câu trả lời
+                document.getElementById(loadingId).remove();
+                
+                if (data.error) {
+                    addMessage('Lỗi: ' + data.error, 'bot');
+                } else {
+                    addMessage(data.response, 'bot');
+                }
+            } catch (error) {
+                document.getElementById(loadingId).remove();
+                addMessage('Không thể kết nối. Kiểm tra server đang chạy.', 'bot');
+            }
+
+            sendBtn.disabled = false;
+            input.focus();
+        }
+
+        function addMessage(text, className) {
+            const messageDiv = document.createElement('div');
+            const id = 'msg-' + Date.now();
+            messageDiv.id = id;
+            messageDiv.className = 'message ' + className;
+            messageDiv.textContent = text;
+            chatbox.appendChild(messageDiv);
+            chatbox.scrollTop = chatbox.scrollHeight;
+            return id;
+        }
+
+        // Enter để gửi tin nhắn
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !sendBtn.disabled) {
+                sendMessage();
+            }
+        });
+
+        // Tin nhắn chào mừng
+        addMessage('Xin chào! Tôi có thể giúp gì cho bạn?', 'bot');
+    </script>
+</body>
+</html>
