@@ -94,17 +94,19 @@ def request_user_location():
 # HÀM LẤY THÔNG TIN THỜI TIẾT THANH HÓA
 # ==============================================================================
 
-def lay_thoi_tiet(city="CanTho", lat=None, lon=None):
+def lay_thoi_tiet(city="Can Tho", lat=None, lon=None):
     """Lấy thông tin thời tiết từ API OpenWeatherMap"""
     try:
-        # API key miễn phí (bạn nên đăng ký key riêng tại openweathermap.org)
-        api_key = "c7debdc7ac4deefb232ab3da884f152d"  # Thay bằng key của bạn
+        api_key = "c7debdc7ac4deefb232ab3da884f152d"
         
+        # Quyết định dùng Tọa độ hay Tên thành phố
         if lat and lon:
             url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric&lang=vi"
+            location_desc = f"Vị trí ({lat}, {lon})"
         else:
             url = f"http://api.openweathermap.org/data/2.5/weather?q={city},VN&appid={api_key}&units=metric&lang=vi"
-        
+            location_desc = city
+            
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
             data = response.json()
@@ -115,22 +117,27 @@ def lay_thoi_tiet(city="CanTho", lat=None, lon=None):
                 "do_am": data['main']['humidity'],
                 "ap_suat": data['main']['pressure'],
                 "mo_ta": data['weather'][0]['description'].capitalize(),
-                "gio": round(data['wind']['speed'] * 3.6, 1),  # m/s -> km/h
-                "may": data['clouds']['all']
+                "gio": round(data['wind']['speed'] * 3.6, 1),
+                "may": data['clouds']['all'],
+                "nguon": "🌍 Dữ liệu vệ tinh (Live)"
             }
-    except:
-        pass
+        else:
+            # Nếu API trả lỗi (VD: Key hết hạn hoặc sai tọa độ)
+            st.error(f"⚠️ API Weather lỗi: {response.status_code}")
+    except Exception as e:
+        st.warning(f"⚠️ Không thể kết nối API Weather: {str(e)}")
     
     # Dữ liệu mặc định nếu API lỗi
     return {
-        "thanh_pho": city,
-        "nhiet_do": 28,
-        "cam_giac": 30,
+        "thanh_pho": f"{city} (Dự phòng)",
+        "nhiet_do": 28.0,
+        "cam_giac": 30.0,
         "do_am": 75,
         "ap_suat": 1012,
-        "mo_ta": "Có mây",
-        "gio": 12,
-        "may": 60
+        "mo_ta": "Thông tin tạm thời",
+        "gio": 12.0,
+        "may": 60,
+        "nguon": "📡 Chế độ ngoại tuyến (Offline)"
     }
 
 # ==============================================================================
@@ -1412,8 +1419,20 @@ def ve_bbox_voi_confidence(img, predictions):
 # 3. GIAO DIỆN ỨNG DỤNG
 # ==============================================================================
 
-st.markdown("<h1>🌾 BÁC SĨ LÚA - CHUYÊN GIA BỆNH HỌC</h1>", unsafe_allow_html=True)
+st.markdown("<h1>🌾 Chuẩn Đoán Bệnh Trên Cây Lúa</h1>", unsafe_allow_html=True)
 st.caption("Hệ thống chẩn đoán và tư vấn phòng trừ bệnh hại lúa - Dữ liệu cập nhật 2025 (Không bao gồm sâu hại)")
+
+# ==============================================================================
+# LẤY DỮ LIỆU THỜI TIẾT (Dùng chung cho cả trang)
+# ==============================================================================
+params = st.query_params
+lat = params.get("lat")
+lon = params.get("lon")
+
+if lat and lon:
+    thoi_tiet = lay_thoi_tiet(lat=lat, lon=lon)
+else:
+    thoi_tiet = lay_thoi_tiet(city="CanTho")
 
 # Hiển thị thời tiết ở sidebar
 with st.sidebar:
@@ -1434,19 +1453,10 @@ with st.sidebar:
             </script>
         """, height=0)
     
-    # Đọc tọa độ từ query params
-    params = st.query_params
-    lat = params.get("lat")
-    lon = params.get("lon")
-    
-    if lat and lon:
-        thoi_tiet = lay_thoi_tiet(lat=lat, lon=lon)
-    else:
-        thoi_tiet = lay_thoi_tiet(city="CanTho")
-        
     st.markdown(f"""
     <div class="weather-box">
         <h4 style='color: white; margin: 0;'>📍 {thoi_tiet['thanh_pho']}</h4>
+        <p style='font-size: 11px; opacity: 0.8; margin-bottom: 10px;'>{thoi_tiet['nguon']}</p>
         <p style='font-size: 32px; margin: 10px 0;'>{thoi_tiet['nhiet_do']}°C</p>
         <p style='margin: 5px 0;'>💧 Độ ẩm: {thoi_tiet['do_am']}%</p>
         <p style='margin: 5px 0;'>🌪️ Gió: {thoi_tiet['gio']} km/h</p>
@@ -1616,16 +1626,14 @@ with tab3:
 
 # --- FOOTER ---
 st.markdown("---")
-st.markdown("""
+st.markdown(f"""
 <div style='text-align: center; color: #666; padding: 20px;'>
-    <p>🌾 <strong>Chuyên Gia Bệnh Lúa AI - {thoi_tiet['thanh_pho']} 2026</strong></p>
+    <p>🌾 <strong>Chuẩn đoán bệnh trên lúa - {thoi_tiet['thanh_pho']} 2026</strong></p>
     <p>🤖 Powered by <strong>Roboflow Object Detection</strong> | 🌐 OpenWeatherMap API</p>
     <p style='font-size: 12px; margin-top: 10px;'>
         ⚠️ <em>Kết quả chỉ mang tính chất tham khảo. Nên tham khảo ý kiến chuyên gia nông nghiệp địa phương.</em>
     </p>
-    <p style='font-size: 11px; color: #999; margin-top: 5px;'>
-        📧 Liên hệ hỗ trợ: <strong>chuyen-gia-lua-ai@thanhhoa.gov.vn</strong>
-    </p>
+   
 </div>
 """, unsafe_allow_html=True)
 
