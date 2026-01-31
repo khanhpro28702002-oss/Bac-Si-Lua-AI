@@ -7,14 +7,6 @@ from datetime import datetime
 from gtts import gTTS
 import requests
 from streamlit_js_eval import get_geolocation
-import google.generativeai as genai
-import os
-from dotenv import load_dotenv
-
-# CONFIG GEMINI (ĐÃ SỬA: gemini-pro thay vì gemini-1.5-flash)
-load_dotenv()
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-model = genai.GenerativeModel('gemini-pro')  # ← ĐÃ SỬA Ở ĐÂY
 
 st.set_page_config(page_title="Bác Sĩ Lúa AI 4.0", page_icon="🌾", layout="wide")
 
@@ -27,13 +19,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# KHỞI TẠO SESSION STATE
 if 'history' not in st.session_state:
     st.session_state['history'] = []
-if 'chat_history' not in st.session_state:
-    st.session_state.chat_history = [
-        {"role": "assistant", "content": "🌾 Chào bà con! Hỏi tôi về bệnh lúa, thuốc trừ, kinh nghiệm..."}
-    ]
 
 # DỮ LIỆU BỆNH
 DATA_BENH = {
@@ -95,7 +82,7 @@ def ve_bbox_len_anh(img, predictions):
 
 # HEADER
 st.markdown("<h1>🌾 BÁC SĨ LÚA AI 4.0</h1>", unsafe_allow_html=True)
-st.caption("Chẩn đoán bệnh lúa qua hình ảnh + Tư vấn AI Gemini")
+st.caption("Chẩn đoán bệnh lúa qua hình ảnh với AI Roboflow")
 
 # THỜI TIẾT
 st.markdown("### 🌤️ Thời Tiết Nông Vụ")
@@ -121,8 +108,8 @@ else:
 
 st.markdown("---")
 
-# TABS
-tab1, tab2, tab3 = st.tabs(["🔍 CHẨN ĐOÁN", "💬 TƯ VẤN GEMINI", "📋 LỊCH SỬ"])
+# TABS (XÓA TAB GEMINI)
+tab1, tab2 = st.tabs(["🔍 CHẨN ĐOÁN HÌNH ẢNH", "📋 LỊCH SỬ KHÁM"])
 
 # TAB 1: CHẨN ĐOÁN
 with tab1:
@@ -144,7 +131,7 @@ with tab1:
             
             if st.button("🚀 BẮT ĐẦU CHẨN ĐOÁN", type="primary", use_container_width=True):
                 with col_r:
-                    with st.spinner("AI đang phân tích..."):
+                    with st.spinner("AI đang phân tích từ model Roboflow..."):
                         img.save("process.jpg")
                         
                         # GỌI ROBOFLOW
@@ -163,10 +150,10 @@ with tab1:
                             
                             # VẼ % LÊN ẢNH
                             img_annotated = ve_bbox_len_anh(img.copy(), top3)
-                            st.image(img_annotated, caption="Kết quả AI")
+                            st.image(img_annotated, caption="Kết quả AI với % Confidence")
                             
                             # TOP 3 CONFIDENCE
-                            st.subheader("📊 Độ tin cậy (Roboflow)")
+                            st.subheader("📊 Độ tin cậy từ Model Roboflow")
                             c1, c2, c3 = st.columns(3)
                             for i, pred in enumerate(top3):
                                 with [c1, c2, c3][i]:
@@ -201,47 +188,13 @@ with tab1:
                                     "conf": top['confidence']*100
                                 })
                         else:
-                            st.success("🌿 Cây lúa khỏe mạnh!")
+                            st.success("🌿 Cây lúa khỏe mạnh! Chúc mừng bà con.")
 
-# TAB 2: CHATBOT GEMINI
+# TAB 2: LỊCH SỬ
 with tab2:
-    st.subheader("💬 Hỏi đáp Gemini AI")
-    
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
-    
-    if prompt := st.chat_input("Hỏi về bệnh lúa, kinh nghiệm..."):
-        st.session_state.chat_history.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.write(prompt)
-        
-        # GỌI GEMINI
-        with st.spinner("Gemini đang trả lời..."):
-            system_prompt = f"""Bạn là chuyên gia nông nghiệp Việt Nam, chuyên về bệnh lúa.
-Trả lời ngắn gọn, thực tế, dễ hiểu cho nông dân. Tập trung:
-- Tên bệnh, triệu chứng
-- Thuốc trừ (tên thương mại + hoạt chất)
-- Cách phòng, thời điểm phun
-- Kinh nghiệm thực tế
-
-Câu hỏi: {prompt}"""
-            
-            try:
-                response = model.generate_content(system_prompt)
-                reply = response.text
-            except Exception as e:
-                reply = f"⚠️ Lỗi Gemini: {str(e)}. Kiểm tra API key."
-        
-        st.session_state.chat_history.append({"role": "assistant", "content": reply})
-        with st.chat_message("assistant"):
-            st.write(reply)
-
-# TAB 3: LỊCH SỬ
-with tab3:
-    st.subheader("📋 Lịch sử chẩn đoán")
+    st.subheader("📋 Lịch sử chẩn đoán trong ngày")
     if st.session_state.history:
         for h in reversed(st.session_state.history):
-            st.write(f"⏰ {h['time']} - **{h['benh']}** ({h['conf']:.1f}%)")
+            st.write(f"⏰ {h['time']} - Phát hiện: **{h['benh']}** ({h['conf']:.1f}%)")
     else:
-        st.write("Chưa có lượt khám.")
+        st.write("Chưa có lượt khám nào.")

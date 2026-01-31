@@ -6,5 +6,4 @@ numpy
 gtts
 streamlit-js-eval
 requests
-google-generativeai
-python-dotenv
+
