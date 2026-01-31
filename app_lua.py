@@ -1,200 +1,78 @@
 import streamlit as st
-from inference_sdk import InferenceHTTPClient
-from PIL import Image, ImageDraw, ImageFont
-import numpy as np
-import cv2
-from datetime import datetime
-from gtts import gTTS
 import requests
+from inference_sdk import InferenceHTTPClient
+from PIL import Image
 from streamlit_js_eval import get_geolocation
 
-st.set_page_config(page_title="Bác Sĩ Lúa AI 4.0", page_icon="🌾", layout="wide")
+# ==========================================
+# 1. CẤU HÌNH HUGGING FACE (BỘ NÃO AI)
+# ==========================================
+# DÁN MÃ TOKEN CỦA BẠN VÀO GIỮA DẤU NGOẶC KÉP
+HF_TOKEN = "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"
+# Mô hình Qwen2.5 hỗ trợ tiếng Việt rất tốt
+MODEL_URL = "https://api-inference.huggingface.co/models/Qwen/Qwen2.5-7B-Instruct"
 
-st.markdown("""
-<style>
-    .main { background-color: #f4fdf4; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-    .report-card { background-color: #ffffff; padding: 20px; border-radius: 15px; border-left: 8px solid #2e7d32; }
-    h1 { color: #1b5e20; }
-</style>
-""", unsafe_allow_html=True)
-
-if 'history' not in st.session_state:
-    st.session_state['history'] = []
-
-# DỮ LIỆU BỆNH
-DATA_BENH = {
-    "Bacterial Leaf Blight": {
-        "ten": "BỆNH BẠC LÁ (CHÁY BÌA LÁ)",
-        "trieu_chung": "Vết bệnh lan dọc mép lá từ chóp xuống, màu vàng hoặc trắng xám.",
-        "nguyen_nhan": "Vi khuẩn Xanthomonas oryzae. Thừa đạm, mưa bão.",
-        "thuoc": ["Starner 20WP", "Xanthomix 20WP", "Totan 200WP"],
-        "loi_khuyen": "Ngưng bón đạm, bón Kali. Rút nước ruộng.",
-        "icon": "🦠"
-    },
-    "Blast": {
-        "ten": "BỆNH ĐẠO ÔN (CHÁY LÁ)",
-        "trieu_chung": "Vết bệnh hình mắt én, tâm xám trắng, viền nâu đậm.",
-        "nguyen_nhan": "Nấm Pyricularia oryzae. Độ ẩm cao, sương mù.",
-        "thuoc": ["Beam 75WP", "Fuji-one 40EC", "Filia 525SE"],
-        "loi_khuyen": "Giữ nước ruộng ổn định. Không phun lá khi bệnh.",
-        "icon": "🔥"
-    },
-    "Brown Spot": {
-        "ten": "BỆNH ĐỐM NÂU (TIÊM LỬA)",
-        "trieu_chung": "Vết tròn nhỏ màu nâu như hạt mè.",
-        "nguyen_nhan": "Nấm. Thiếu dinh dưỡng, đất phèn.",
-        "thuoc": ["Tilt Super 300EC", "Anvil 5SC"],
-        "loi_khuyen": "Bón cân đối N-P-K, bổ sung vôi.",
-        "icon": "🍂"
-    }
-}
-DATA_BENH.update({
-    "Bacterialblight": {"ref": "Bacterial Leaf Blight"},
-    "Leaf Blast": {"ref": "Blast"},
-    "Rice Blast": {"ref": "Blast"},
-    "Brownspot": {"ref": "Brown Spot"}
-})
-
-def lay_thoi_tiet(lat, lon):
-    try:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,rain&timezone=auto"
-        return requests.get(url, timeout=5).json().get('current')
-    except: 
-        return None
-
-def ve_bbox_len_anh(img, predictions):
-    """Vẽ % confidence lên ảnh"""
-    draw = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
-    except:
-        font = ImageFont.load_default()
+def goi_chuyen_gia_hf(user_input):
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    # Cấu hình lời nhắc (Prompt) để AI đóng vai chuyên gia
+    system_prompt = f"<|im_start|>system\nBạn là chuyên gia nông nghiệp Việt Nam. Hãy tư vấn cho nông dân ngắn gọn, dễ hiểu.<|im_end|>\n<|im_start|>user\n{user_input}<|im_end|>\n<|im_start|>assistant\n"
     
-    for pred in predictions[:3]:
-        conf = pred['confidence'] * 100
-        label = f"{pred['class']}: {conf:.1f}%"
-        x, y = 20, 20 + predictions.index(pred) * 40
-        bbox = draw.textbbox((x, y), label, font=font)
-        draw.rectangle(bbox, fill=(0, 128, 0, 200))
-        draw.text((x, y), label, fill=(255, 255, 255), font=font)
-    return img
+    payload = {
+        "inputs": system_prompt,
+        "parameters": {"max_new_tokens": 512, "temperature": 0.7}
+    }
+    
+    try:
+        response = requests.post(MODEL_URL, headers=headers, json=payload, timeout=10)
+        result = response.json()
+        # Xử lý văn bản trả về
+        text = result[0]['generated_text']
+        return text.split("<|im_start|>assistant\n")[-1].strip()
+    except Exception as e:
+        return f"Dạ, chuyên gia AI đang bận tí (Lỗi: {e}). Bà con thử lại sau nhé!"
 
-# HEADER
-st.markdown("<h1>🌾 BÁC SĨ LÚA AI 4.0</h1>", unsafe_allow_html=True)
-st.caption("Chẩn đoán bệnh lúa qua hình ảnh với AI Roboflow")
+# ==========================================
+# 2. GIAO DIỆN CHÍNH
+# ==========================================
+st.set_page_config(page_title="Bác Sĩ Lúa AI Pro", layout="wide")
+st.markdown("<h1 style='color: #2e7d32;'>🌾 BÁC SĨ LÚA AI: HUGGING FACE EDITION</h1>", unsafe_allow_html=True)
 
-# THỜI TIẾT
-st.markdown("### 🌤️ Thời Tiết Nông Vụ")
-loc = get_geolocation()
+# Lấy GPS an toàn (Chống lỗi DuplicateElementKey và KeyError)
+loc = get_geolocation(key='gps_hf_fix')
 
 if loc and 'coords' in loc:
-    lat, lon = loc['coords'].get('latitude'), loc['coords'].get('longitude')
-    weather = lay_thoi_tiet(lat, lon)
-    if weather:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🌡️ Nhiệt độ", f"{weather['temperature_2m']}°C")
-        c2.metric("💧 Độ ẩm", f"{weather['relative_humidity_2m']}%")
-        c3.metric("🌧️ Mưa", f"{weather['rain']} mm")
-        with c4:
-            if weather['rain'] > 0: 
-                st.error("⚠️ Đang mưa!")
-            elif weather['relative_humidity_2m'] > 85: 
-                st.warning("🔥 Ẩm cao!")
-            else: 
-                st.success("🌤️ Thời tiết tốt")
+    st.success(f"📍 Vị trí ruộng: {round(loc['coords']['latitude'], 4)}, {round(loc['coords']['longitude'], 4)}")
 else:
-    st.info("📍 Cho phép truy cập vị trí để xem thời tiết")
+    st.info("📌 Bà con hãy bấm 'Cho phép' (Allow) vị trí để xem thời tiết nhé.")
 
 st.markdown("---")
+tab1, tab2 = st.tabs(["📸 CHẨN ĐOÁN ẢNH", "💬 CHUYÊN GIA AI"])
 
-# TABS (XÓA TAB GEMINI)
-tab1, tab2 = st.tabs(["🔍 CHẨN ĐOÁN HÌNH ẢNH", "📋 LỊCH SỬ KHÁM"])
-
-# TAB 1: CHẨN ĐOÁN
+# --- TAB CHẨN ĐOÁN (Sử dụng Roboflow từ dữ liệu của bạn) ---
 with tab1:
-    col_l, col_r = st.columns([1, 1.3])
-    with col_l:
-        st.subheader("1. Chụp/Tải ảnh lá lúa")
-        
-        input_type = st.radio("Chọn nguồn:", ["Tải ảnh từ máy", "Chụp bằng Camera"], horizontal=True)
-        
-        if input_type == "Chụp bằng Camera":
-            file = st.camera_input("Chụp ảnh lá lúa")
-        else:
-            file = st.file_uploader("Chọn file ảnh", type=['jpg','png','jpeg'])
+    f = st.file_uploader("Chọn ảnh lá lúa bị bệnh", type=['jpg','png','jpeg'])
+    if f:
+        img = Image.open(f)
+        st.image(img, use_column_width=True)
+        if st.button("🔍 PHÂN TÍCH BỆNH", type="primary"):
+            with st.spinner("Đang soi bệnh..."):
+                img.save("temp.jpg")
+                # Thông tin từ ảnh cấu hình của bạn
+                client = InferenceHTTPClient(api_url="https://detect.roboflow.com", api_key="8tf2UvcnEv8h80bV2G0Q")
+                res = client.infer("temp.jpg", model_id="rice-leaf-disease-twtlz/1")
+                preds = res.get('predictions', [])
+                if preds:
+                    benh = preds[0]['class']
+                    st.error(f"⚠️ Phát hiện: {benh}")
+                    # Dùng Hugging Face để tư vấn phác đồ
+                    advice = goi_chuyen_gia_hf(f"Lúa bị bệnh {benh}. Hãy cho biết tên tiếng Việt và thuốc đặc trị cụ thể.")
+                    st.write(advice)
+                else: st.success("✅ Cây lúa khỏe mạnh!")
 
-    if file:
-        img = Image.open(file).convert("RGB")
-        with col_l:
-            st.image(img, use_column_width=True, caption="Ảnh đầu vào")
-            
-            if st.button("🚀 BẮT ĐẦU CHẨN ĐOÁN", type="primary", use_container_width=True):
-                with col_r:
-                    with st.spinner("AI đang phân tích từ model Roboflow..."):
-                        img.save("process.jpg")
-                        
-                        # GỌI ROBOFLOW
-                        client = InferenceHTTPClient(
-                            api_url="https://detect.roboflow.com", 
-                            api_key="8tf2UvcnEv8h80bV2G0Q"
-                        )
-                        res = client.infer("process.jpg", model_id="rice-leaf-disease-twtlz/1")
-                        preds = res.get('predictions', [])
-                        
-                        if isinstance(preds, dict): 
-                            preds = [{"class": k, "confidence": v['confidence']} for k, v in preds.items()]
-
-                        if preds:
-                            top3 = sorted(preds, key=lambda x: x['confidence'], reverse=True)[:3]
-                            
-                            # VẼ % LÊN ẢNH
-                            img_annotated = ve_bbox_len_anh(img.copy(), top3)
-                            st.image(img_annotated, caption="Kết quả AI với % Confidence")
-                            
-                            # TOP 3 CONFIDENCE
-                            st.subheader("📊 Độ tin cậy từ Model Roboflow")
-                            c1, c2, c3 = st.columns(3)
-                            for i, pred in enumerate(top3):
-                                with [c1, c2, c3][i]:
-                                    emoji = "🟢" if i==0 else "🟡" if i==1 else "🟠"
-                                    st.metric(f"{emoji} {pred['class']}", f"{pred['confidence']*100:.1f}%")
-                            
-                            # THÔNG TIN BỆNH
-                            top = top3[0]
-                            benh = DATA_BENH.get(top['class'])
-                            if benh and "ref" in benh: 
-                                benh = DATA_BENH.get(benh["ref"])
-                            
-                            if benh:
-                                st.markdown(f"### ✅ Kết luận: {benh['ten']} ({top['confidence']*100:.1f}%)")
-                                st.markdown(f"""
-                                <div class="report-card">
-                                    <p><b>🧐 Triệu chứng:</b> {benh['trieu_chung']}</p>
-                                    <p><b>🌪️ Nguyên nhân:</b> {benh['nguyen_nhan']}</p>
-                                    <p style="color: #d32f2f;"><b>💊 Thuốc:</b> {', '.join(benh['thuoc'])}</p>
-                                    <p><b>💡 Khuyến cáo:</b> {benh['loi_khuyen']}</p>
-                                </div>
-                                """, unsafe_allow_html=True)
-                                
-                                # VOICE
-                                gTTS(f"Lúa bị {benh['ten']}. Dùng {benh['thuoc'][0]}.", lang='vi').save("voice.mp3")
-                                st.audio("voice.mp3")
-                                
-                                # LƯU LỊCH SỬ
-                                st.session_state.history.append({
-                                    "time": datetime.now().strftime("%H:%M"),
-                                    "benh": benh['ten'],
-                                    "conf": top['confidence']*100
-                                })
-                        else:
-                            st.success("🌿 Cây lúa khỏe mạnh! Chúc mừng bà con.")
-
-# TAB 2: LỊCH SỬ
+# --- TAB CHATBOT AI ---
 with tab2:
-    st.subheader("📋 Lịch sử chẩn đoán trong ngày")
-    if st.session_state.history:
-        for h in reversed(st.session_state.history):
-            st.write(f"⏰ {h['time']} - Phát hiện: **{h['benh']}** ({h['conf']:.1f}%)")
-    else:
-        st.write("Chưa có lượt khám nào.")
+    if query := st.chat_input("Hỏi chuyên gia về kỹ thuật lúa gạo..."):
+        with st.chat_message("user"): st.write(query)
+        with st.chat_message("assistant"):
+            with st.spinner("Đang suy luận..."):
+                st.write(goi_chuyen_gia_hf(query))
