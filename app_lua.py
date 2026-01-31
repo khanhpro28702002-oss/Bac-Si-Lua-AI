@@ -213,7 +213,7 @@ from streamlit_js_eval import get_geolocation
 # DÁN MÃ API KEY CỦA BẠN VÀO GIỮA DẤU NGOẶC KÉP DƯỚI ĐÂY
 API_KEY_GEMINI = "DÁN_MÃ_API_KEY_CỦA_BẠN_VÀO_ĐÂY"
 
-if API_KEY_GEMINI != "DÁN_MÃ_API_KEY_CỦA_BẠN_VÀO_ĐÂY":
+if API_KEY_GEMINI != "AIzaSyBFYtJFvAAiR3DqqcNtw1-3gHHe2g-2eXA":
     genai.configure(api_key=API_KEY_GEMINI)
     model_ai = genai.GenerativeModel('gemini-1.5-flash')
 else:
