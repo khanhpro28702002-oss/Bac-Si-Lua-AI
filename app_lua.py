@@ -7,201 +7,145 @@ from datetime import datetime
 from gtts import gTTS
 import io
 from fpdf import FPDF
-import time
 import requests
 from streamlit_js_eval import get_geolocation
+import google.generativeai as genai
 
-# ==========================================
-# 1. THIẾT LẬP CẤU HÌNH VÀ GIAO DIỆN
-# ==========================================
-st.set_page_config(page_title="Hệ thống Bác Sĩ Lúa AI 4.0", page_icon="🌾", layout="wide")
+# ==============================================================================
+# 1. CẤU HÌNH HỆ THỐNG & AI BRAIN (GEMINI)
+# ==============================================================================
 
-# CSS để App trông "xịn" hơn
-st.markdown("""
-<style>
-    .main { background-color: #f4fdf4; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-    .report-card { background-color: #ffffff; padding: 20px; border-radius: 15px; border-left: 8px solid #2e7d32; }
-    h1 { color: #1b5e20; font-family: 'Helvetica Neue', sans-serif; }
-</style>
-""", unsafe_allow_html=True)
+# THAY MÃ API KEY CỦA BẠN VÀO ĐÂY
+API_KEY_GEMINI = "AIzaSyBFYtJFvAAiR3DqqcNtw1-3gHHe2g-2eXA"
 
-# Khởi tạo bộ nhớ tạm
+# Cấu hình "Nhân cách" cho Trợ lý AI
+genai.configure(api_key=API_KEY_GEMINI)
+model_gemini = genai.GenerativeModel(
+    model_name="gemini-1.5-flash",
+    system_instruction=(
+        "Bạn là Chuyên gia Nông nghiệp Việt Nam với 30 năm kinh nghiệm về lúa gạo. "
+        "Hãy dùng giọng văn gần gũi, chân chất của người miền Tây hoặc miền Bắc để tư vấn cho bà con. "
+        "Kiến thức của bạn bao gồm: kỹ thuật canh tác, nhận biết sâu bệnh, cách dùng thuốc BVTV an toàn, "
+        "và quản lý nước ruộng. Nếu bà con hỏi về bệnh lúa, hãy tư vấn chi tiết phác đồ điều trị."
+    )
+)
+
+# Cấu hình Roboflow (Thị giác máy tính)
+ROBO_API_KEY = "8tf2UvcnEv8h80bV2G0Q"
+MODEL_ID = "rice-leaf-disease-twtlz/1"
+
+st.set_page_config(page_title="Bác Sĩ Lúa AI Pro", page_icon="🌾", layout="wide")
+
+# Khởi tạo bộ nhớ Chat
 if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = [{"role": "assistant", "content": "🌾 Chào bà con! Tôi là Trợ lý AI chuyên về lúa gạo. Bà con cần hỗ trợ gì về bệnh lý hay thời tiết không?"}]
-if 'history' not in st.session_state:
-    st.session_state['history'] = []
+    st.session_state['chat_history'] = []
 
-# ==========================================
-# 2. KHO DỮ LIỆU THUỐC & KIẾN THỨC NÔNG NGHIỆP
-# ==========================================
-DATA_BENH = {
-    "Bacterial Leaf Blight": {
-        "ten": "BỆNH BẠC LÁ (CHÁY BÌA LÁ)",
-        "trieu_chung": "Vết bệnh lan dọc mép lá từ chóp xuống, màu vàng hoặc trắng xám, rìa gợn sóng.",
-        "nguyen_nhan": "Vi khuẩn Xanthomonas oryzae. Thừa đạm, mưa bão làm rách lá lây lan.",
-        "hoat_chat": "Bismerthiazol, Oxolinic acid, Kasugamycin.",
-        "thuoc": ["Starner 20WP", "Xanthomix 20WP", "Totan 200WP", "Sasa 25WP"],
-        "loi_khuyen": "Ngưng bón đạm, bón bổ sung Kali. Rút nước ruộng để hạn chế vi khuẩn.",
-        "icon": "🦠"
-    },
-    "Blast": {
-        "ten": "BỆNH ĐẠO ÔN (CHÁY LÁ)",
-        "trieu_chung": "Vết bệnh hình mắt én, tâm xám trắng, viền nâu đậm. Nặng có thể gây cháy cả lá.",
-        "nguyen_nhan": "Nấm Pyricularia oryzae. Trời âm u, sương mù, độ ẩm cao.",
-        "hoat_chat": "Tricyclazole, Isoprothiolane, Fenoxanil.",
-        "thuoc": ["Beam 75WP", "Fuji-one 40EC", "Filia 525SE", "Flash 75WP"],
-        "loi_khuyen": "Giữ nước ruộng ổn định. Không phun phân bón lá khi lúa đang bệnh.",
-        "icon": "🔥"
-    },
-    "Brown Spot": {
-        "ten": "BỆNH ĐỐM NÂU (TIÊM LỬA)",
-        "trieu_chung": "Vết bệnh tròn nhỏ màu nâu như hạt mè rải rác trên phiến lá.",
-        "nguyen_nhan": "Nấm. Thường gặp ở ruộng thiếu dinh dưỡng, đất phèn, ngộ độc hữu cơ.",
-        "hoat_chat": "Propiconazole, Difenoconazole.",
-        "thuoc": ["Tilt Super 300EC", "Anvil 5SC", "Nevo 330EC"],
-        "loi_khuyen": "Cần bón cân đối N-P-K, bổ sung vôi để cải tạo đất phèn.",
-        "icon": "🍂"
-    }
-}
-# Đăng ký các tên thay thế từ Model AI
-DATA_BENH.update({
-    "Bacterialblight": {"ref": "Bacterial Leaf Blight"},
-    "Leaf Blast": {"ref": "Blast"}, "Rice Blast": {"ref": "Blast"},
-    "Brownspot": {"ref": "Brown Spot"},
-    "Sheathblight": {"ten": "KHÔ VẰN", "thuoc": ["Validacin 5L", "Anvil 5SC"], "icon": "🍄"},
-    "Hispa": {"ten": "SÂU GAI", "thuoc": ["Padan 95SP", "Reasgant 3.6EC"], "icon": "🐛"},
-    "Leafscald": {"ten": "CHÁY CHÓP LÁ", "thuoc": ["Carbenzim 500FL"], "icon": "🍂"}
-})
+# ==============================================================================
+# 2. CÁC HÀM XỬ LÝ (HÀM CON)
+# ==============================================================================
 
-# ==========================================
-# 3. CÁC MODULE CHỨC NĂNG HỆ THỐNG
-# ==========================================
-
-def lay_thoi_tiet(lat, lon):
+def get_weather(lat, lon):
     try:
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,rain&timezone=auto"
-        response = requests.get(url, timeout=5).json()
-        return response.get('current')
+        return requests.get(url, timeout=5).json().get('current')
     except: return None
 
-def xuat_pdf_don_thuoc(info):
+def create_pdf(info_text):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", 'B', size=16)
-    pdf.cell(200, 10, txt="PHIEU KET QUA CHAN DOAN LUA 4.0", ln=1, align='C')
-    pdf.set_font("Arial", size=12)
+    pdf.set_font("Arial", size=14)
+    pdf.cell(200, 10, txt="PHIEU KET QUA TU VAN NONG NGHIEP", ln=1, align='C')
     pdf.ln(10)
-    pdf.cell(0, 10, txt=f"Ngay chan doan: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=1)
-    pdf.cell(0, 10, txt=f"KET LUAN: {info['ten']}", ln=1)
-    if 'thuoc' in info:
-        pdf.multi_cell(0, 10, txt=f"Danh sach thuoc goi y: {', '.join(info['thuoc'])}")
+    pdf.multi_cell(0, 10, txt=info_text.encode('latin-1', 'ignore').decode('latin-1'))
     return pdf.output(dest='S').encode('latin-1', 'ignore')
 
-# ==========================================
-# 4. GIAO DIỆN CHÍNH (MAIN UI)
-# ==========================================
+# ==============================================================================
+# 3. GIAO DIỆN NGƯỜI DÙNG (UI)
+# ==============================================================================
 
-st.markdown("<h1>🌾 BÁC SĨ LÚA AI: SIÊU TRỢ LÝ NÔNG NGHIỆP</h1>", unsafe_allow_html=True)
-st.caption("Giải pháp công nghệ chẩn đoán bệnh lúa qua hình ảnh, tư vấn thuốc và thời tiết thực tế.")
+st.markdown("<h1 style='color: #1b5e20;'>🌾 BÁC SĨ LÚA AI: SIÊU TRỢ LÝ 4.0</h1>", unsafe_allow_html=True)
 
-# --- MODULE THỜI TIẾT GPS ---
-st.markdown("### 🌤️ Thời Tiết Nông Vụ Thực Tế")
+# --- PHẦN THỜI TIẾT ---
+st.subheader("🌦️ Thời Tiết Nông Vụ")
 loc = get_geolocation()
-
 if loc and 'coords' in loc:
-    lat, lon = loc['coords'].get('latitude'), loc['coords'].get('longitude')
-    weather = lay_thoi_tiet(lat, lon)
-    if weather:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("🌡️ Nhiệt độ", f"{weather['temperature_2m']}°C")
-        c2.metric("💧 Độ ẩm", f"{weather['relative_humidity_2m']}%")
-        c3.metric("🌧️ Mưa", f"{weather['rain']} mm")
-        with c4:
-            if weather['rain'] > 0: st.error("⚠️ Đang mưa: Đừng phun thuốc!")
-            elif weather['relative_humidity_2m'] > 85: st.warning("🔥 Ẩm cao: Cẩn thận đạo ôn!")
-            else: st.success("🌤️ Thời tiết tốt để ra thăm đồng.")
+    lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
+    w = get_weather(lat, lon)
+    if w:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("🌡️ Nhiệt độ", f"{w['temperature_2m']}°C")
+        c2.metric("💧 Độ ẩm", f"{w['relative_humidity_2m']}%")
+        c3.metric("🌧️ Lượng mưa", f"{w['rain']} mm")
+        if w['rain'] > 0: st.error("☔ Đang có mưa: Bà con tạm ngưng phun thuốc!")
 else:
-    st.info("📍 Vui lòng 'Cho phép' truy cập vị trí để xem thời tiết chính xác tại ruộng của bà con.")
+    st.info("📍 Đang chờ vị trí GPS để dự báo thời tiết tại ruộng...")
 
 st.markdown("---")
 
-# --- CHIA TAB CHỨC NĂNG ---
-tab_chinh, tab_chat, tab_nhat_ky = st.tabs(["🔍 CHẨN ĐOÁN HÌNH ẢNH", "💬 TRỢ LÝ AI", "📋 NHẬT KÝ KHÁM"])
+# --- TAB CHỨC NĂNG ---
+tab_camera, tab_chat = st.tabs(["📸 CHẨN ĐOÁN HÌNH ẢNH", "💬 HỎI ĐÁP CHUYÊN GIA AI"])
 
-# TAB 1: CHẨN ĐOÁN
-with tab_chinh:
-    col_l, col_r = st.columns([1, 1.3])
+# --- TAB 1: CAMERA AI ---
+with tab_camera:
+    col_l, col_r = st.columns([1, 1.2])
     with col_l:
-        st.subheader("1. Chụp ảnh/Tải ảnh lá lúa")
-        input_type = st.radio("Chọn nguồn:", ["Tải ảnh từ máy", "Chụp bằng Camera"], horizontal=True)
-        file = st.camera_input("Chụp ảnh") if input_type == "Chụp bằng Camera" else st.file_uploader("Chọn file ảnh", type=['jpg','png','jpeg'])
+        mode = st.radio("Chọn nguồn ảnh:", ["Tải lên", "Chụp trực tiếp"], horizontal=True)
+        input_file = st.camera_input("Chụp lá lúa") if mode == "Chụp trực tiếp" else st.file_uploader("Chọn ảnh", type=['jpg','png'])
 
-    if file:
-        img = Image.open(file)
+    if input_file:
+        img = Image.open(input_file)
         with col_l:
-            st.image(img, use_column_width=True, caption="Mẫu bệnh đầu vào")
-            if st.button("🚀 BẮT ĐẦU CHẨN ĐOÁN", type="primary", use_container_width=True):
+            st.image(img, use_column_width=True)
+            if st.button("🔍 PHÂN TÍCH MẪU BỆNH", type="primary", use_container_width=True):
                 with col_r:
-                    with st.spinner("AI đang làm việc..."):
-                        img.save("process.jpg")
-                        client = InferenceHTTPClient(api_url="https://detect.roboflow.com", api_key="8tf2UvcnEv8h80bV2G0Q")
-                        res = client.infer("process.jpg", model_id="rice-leaf-disease-twtlz/1")
+                    with st.spinner("AI đang soi bệnh..."):
+                        img.save("temp.jpg")
+                        client = InferenceHTTPClient(api_url="https://detect.roboflow.com", api_key=ROBO_API_KEY)
+                        res = client.infer("temp.jpg", model_id=MODEL_ID)
                         preds = res.get('predictions', [])
                         
-                        if isinstance(preds, dict): preds = [{"class": k, "confidence": v['confidence']} for k, v in preds.items()]
-
                         if preds:
-                            top = max(preds, key=lambda x: x['confidence'])
-                            benh = DATA_BENH.get(top['class'])
-                            if benh and "ref" in benh: benh = DATA_BENH.get(benh["ref"])
+                            # Nếu có bệnh, dùng Gemini để giải thích chi tiết
+                            top_label = preds[0]['class'] if isinstance(preds, list) else list(preds.keys())[0]
+                            st.warning(f"⚠️ Phát hiện dấu hiệu: {top_label}")
                             
-                            if benh:
-                                st.markdown(f"### ✅ Đã xác định: {benh['ten']}")
-                                st.markdown(f"""
-                                <div class="report-card">
-                                    <p><b>🧐 Dấu hiệu:</b> {benh.get('trieu_chung','Chưa có dữ liệu')}</p>
-                                    <p><b>🌪️ Nguyên nhân:</b> {benh.get('nguyen_nhan','Chưa có dữ liệu')}</p>
-                                    <p style="color: #d32f2f;"><b>💊 Thuốc đặc trị:</b> {', '.join(benh['thuoc'])}</p>
-                                    <p><b>💡 Lời khuyên:</b> {benh.get('loi_khuyen','')}</p>
-                                </div>
-                                """, unsafe_allow_html=True)
-                                
-                                # Giọng nói AI
-                                txt_read = f"Lúa bị {benh['ten']}. Bà con dùng thuốc {benh['thuoc'][0]}."
-                                gTTS(txt_read, lang='vi').save("voice.mp3")
-                                st.audio("voice.mp3")
-                                
-                                # Lưu lịch sử
-                                st.session_state.history.append({"time": datetime.now().strftime("%H:%M"), "benh": benh['ten']})
-                                
-                                # Xuất PDF
-                                st.download_button("📥 Tải đơn thuốc PDF", xuat_pdf_don_thuoc(benh), f"Ket_qua_{top['class']}.pdf")
+                            # Dùng "Não bộ" Gemini để tư vấn chi tiết về bệnh này
+                            prompt_advice = f"Lá lúa có dấu hiệu bệnh {top_label}. Hãy cho biết tên tiếng Việt, triệu chứng chi tiết, nguyên nhân và danh sách các loại thuốc BVTV đặc trị tại Việt Nam kèm cách dùng."
+                            advice = model_gemini.generate_content(prompt_advice).text
+                            
+                            st.markdown("### 📋 Tư vấn từ Chuyên gia:")
+                            st.write(advice)
+                            
+                            # Giọng nói
+                            gTTS(f"Phát hiện bệnh {top_label}. Bà con xem hướng dẫn điều trị bên dưới.", lang='vi').save("v.mp3")
+                            st.audio("v.mp3")
+                            
+                            # PDF
+                            st.download_button("📥 Tải hướng dẫn điều trị (PDF)", create_pdf(advice), "Tu_van_lua.pdf")
                         else:
-                            st.success("🌿 Cây lúa khỏe mạnh! Chúc mừng bà con.")
+                            st.success("✅ Cây lúa khỏe mạnh! Tiếp tục theo dõi bà con nhé.")
 
-# TAB 2: CHATBOT AI
+# --- TAB 2: CHATBOT THÔNG MINH (GEMINI) ---
 with tab_chat:
-    st.subheader("💬 Hỏi đáp cùng chuyên gia")
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]): st.write(msg["content"])
-    
-    if p := st.chat_input("Hỏi tôi về đạo ôn, bạc lá, thuốc trừ sâu..."):
-        st.session_state.chat_history.append({"role": "user", "content": p})
-        with st.chat_message("user"): st.write(p)
-        
-        reply = "Bà con hỏi tên bệnh để tôi tư vấn thuốc nhé!"
-        if "đạo ôn" in p.lower(): reply = "Đạo ôn bà con dùng Beam hoặc Fuji-one nhé. Nhớ giữ nước ruộng."
-        elif "bạc lá" in p.lower(): reply = "Bạc lá bà con ngưng bón đạm, phun Starner ngay."
-        
-        st.session_state.chat_history.append({"role": "assistant", "content": reply})
-        with st.chat_message("assistant"): st.write(reply)
+    st.subheader("💬 Trò chuyện cùng Chuyên gia Nông nghiệp")
+    st.caption("Bà con có thể hỏi bất cứ điều gì: kỹ thuật bón phân, cách trị rầy nâu, giống lúa ST25...")
 
-# TAB 3: NHẬT KÝ
-with tab_nhat_ky:
-    st.subheader("📋 Lịch sử chẩn đoán trong ngày")
-    if st.session_state.history:
-        for h in reversed(st.session_state.history):
-            st.write(f"⏰ {h['time']} - Phát hiện: **{h['benh']}**")
-    else:
-        st.write("Chưa có lượt khám nào.")
+    # Hiển thị lịch sử chat
+    for m in st.session_state.chat_history:
+        with st.chat_message(m["role"]): st.write(m["content"])
+
+    # Nhập câu hỏi
+    if user_p := st.chat_input("Nhập câu hỏi tại đây..."):
+        st.session_state.chat_history.append({"role": "user", "content": user_p})
+        with st.chat_message("user"): st.write(user_p)
+        
+        with st.chat_message("assistant"):
+            with st.spinner("Chuyên gia đang suy nghĩ..."):
+                try:
+                    # Gửi câu hỏi cho Gemini
+                    response = model_gemini.generate_content(user_p)
+                    full_reply = response.text
+                    st.write(full_reply)
+                    st.session_state.chat_history.append({"role": "assistant", "content": full_reply})
+                except Exception as e:
+                    st.error("Dạ, mạng hơi yếu bà con đợi xíu ạ!")

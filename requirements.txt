@@ -7,3 +7,4 @@ gTTS
 fpdf
 streamlit-js-eval
 requests
+google-generativeai
