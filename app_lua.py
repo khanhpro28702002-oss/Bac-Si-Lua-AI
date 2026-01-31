@@ -1,402 +1,139 @@
 import streamlit as st
+import google.generativeai as genai
 from inference_sdk import InferenceHTTPClient
 from PIL import Image
-import numpy as np
-import cv2
-from datetime import datetime
+import requests
+from streamlit_js_eval import get_geolocation
 from gtts import gTTS
-import io
 from fpdf import FPDF
-import requests
-from streamlit_js_eval import get_geolocation
-import google.generativeai as genai
-
-# ==============================================================================
-# 1. CẤU HÌNH HỆ THỐNG & AI BRAIN (GEMINI)
-# ==============================================================================
-
-# THAY MÃ API KEY CỦA BẠN VÀO ĐÂY
-API_KEY_GEMINI = "AIzaSyBFYtJFvAAiR3DqqcNtw1-3gHHe2g-2eXA"
-
-# Cấu hình "Nhân cách" cho Trợ lý AI
-genai.configure(api_key=API_KEY_GEMINI)
-model_gemini = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
-    system_instruction=(
-        "Bạn là Chuyên gia Nông nghiệp Việt Nam với 30 năm kinh nghiệm về lúa gạo. "
-        "Hãy dùng giọng văn gần gũi, chân chất của người miền Tây hoặc miền Bắc để tư vấn cho bà con. "
-        "Kiến thức của bạn bao gồm: kỹ thuật canh tác, nhận biết sâu bệnh, cách dùng thuốc BVTV an toàn, "
-        "và quản lý nước ruộng. Nếu bà con hỏi về bệnh lúa, hãy tư vấn chi tiết phác đồ điều trị."
-    )
-)
-
-# Cấu hình Roboflow (Thị giác máy tính)
-ROBO_API_KEY = "8tf2UvcnEv8h80bV2G0Q"
-MODEL_ID = "rice-leaf-disease-twtlz/1"
-
-st.set_page_config(page_title="Bác Sĩ Lúa AI Pro", page_icon="🌾", layout="wide")
-
-# Khởi tạo bộ nhớ Chat
-if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = []
-
-# ==============================================================================
-# 2. CÁC HÀM XỬ LÝ (HÀM CON)
-# ==============================================================================
-
-def get_weather(lat, lon):
-    try:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,rain&timezone=auto"
-        return requests.get(url, timeout=5).json().get('current')
-    except: return None
-
-def create_pdf(info_text):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=14)
-    pdf.cell(200, 10, txt="PHIEU KET QUA TU VAN NONG NGHIEP", ln=1, align='C')
-    pdf.ln(10)
-    pdf.multi_cell(0, 10, txt=info_text.encode('latin-1', 'ignore').decode('latin-1'))
-    return pdf.output(dest='S').encode('latin-1', 'ignore')
-
-# ==============================================================================
-# 3. GIAO DIỆN NGƯỜI DÙNG (UI)
-# ==============================================================================
-
-st.markdown("<h1 style='color: #1b5e20;'>🌾 BÁC SĨ LÚA AI: SIÊU TRỢ LÝ 4.0</h1>", unsafe_allow_html=True)
-
-# --- PHẦN THỜI TIẾT ---
-st.subheader("🌦️ Thời Tiết Nông Vụ")
-loc = get_geolocation()
-if loc and 'coords' in loc:
-    lat, lon = loc['coords']['latitude'], loc['coords']['longitude']
-    w = get_weather(lat, lon)
-    if w:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("🌡️ Nhiệt độ", f"{w['temperature_2m']}°C")
-        c2.metric("💧 Độ ẩm", f"{w['relative_humidity_2m']}%")
-        c3.metric("🌧️ Lượng mưa", f"{w['rain']} mm")
-        if w['rain'] > 0: st.error("☔ Đang có mưa: Bà con tạm ngưng phun thuốc!")
-else:
-    st.info("📍 Đang chờ vị trí GPS để dự báo thời tiết tại ruộng...")
-
-st.markdown("---")
-
-# --- TAB CHỨC NĂNG ---
-tab_camera, tab_chat = st.tabs(["📸 CHẨN ĐOÁN HÌNH ẢNH", "💬 HỎI ĐÁP CHUYÊN GIA AI"])
-
-# --- TAB 1: CAMERA AI ---
-with tab_camera:
-    col_l, col_r = st.columns([1, 1.2])
-    with col_l:
-        mode = st.radio("Chọn nguồn ảnh:", ["Tải lên", "Chụp trực tiếp"], horizontal=True)
-        input_file = st.camera_input("Chụp lá lúa") if mode == "Chụp trực tiếp" else st.file_uploader("Chọn ảnh", type=['jpg','png'])
-
-    if input_file:
-        img = Image.open(input_file)
-        with col_l:
-            st.image(img, use_column_width=True)
-            if st.button("🔍 PHÂN TÍCH MẪU BỆNH", type="primary", use_container_width=True):
-                with col_r:
-                    with st.spinner("AI đang soi bệnh..."):
-                        img.save("temp.jpg")
-                        client = InferenceHTTPClient(api_url="https://detect.roboflow.com", api_key=ROBO_API_KEY)
-                        res = client.infer("temp.jpg", model_id=MODEL_ID)
-                        preds = res.get('predictions', [])
-                        
-                        if preds:
-                            # Nếu có bệnh, dùng Gemini để giải thích chi tiết
-                            top_label = preds[0]['class'] if isinstance(preds, list) else list(preds.keys())[0]
-                            st.warning(f"⚠️ Phát hiện dấu hiệu: {top_label}")
-                            
-                            # Dùng "Não bộ" Gemini để tư vấn chi tiết về bệnh này
-                            prompt_advice = f"Lá lúa có dấu hiệu bệnh {top_label}. Hãy cho biết tên tiếng Việt, triệu chứng chi tiết, nguyên nhân và danh sách các loại thuốc BVTV đặc trị tại Việt Nam kèm cách dùng."
-                            advice = model_gemini.generate_content(prompt_advice).text
-                            
-                            st.markdown("### 📋 Tư vấn từ Chuyên gia:")
-                            st.write(advice)
-                            
-                            # Giọng nói
-                            gTTS(f"Phát hiện bệnh {top_label}. Bà con xem hướng dẫn điều trị bên dưới.", lang='vi').save("v.mp3")
-                            st.audio("v.mp3")
-                            
-                            # PDF
-                            st.download_button("📥 Tải hướng dẫn điều trị (PDF)", create_pdf(advice), "Tu_van_lua.pdf")
-                        else:
-                            st.success("✅ Cây lúa khỏe mạnh! Tiếp tục theo dõi bà con nhé.")
-
-# --- TAB 2: CHATBOT THÔNG MINH (GEMINI) ---
-with tab_chat:
-    st.subheader("💬 Trò chuyện cùng Chuyên gia Nông nghiệp")
-    st.caption("Bà con có thể hỏi bất cứ điều gì: kỹ thuật bón phân, cách trị rầy nâu, giống lúa ST25...")
-
-    # Hiển thị lịch sử chat
-    for m in st.session_state.chat_history:
-        with st.chat_message(m["role"]): st.write(m["content"])
-
-    # Nhập câu hỏi
-    if user_p := st.chat_input("Nhập câu hỏi tại đây..."):
-        st.session_state.chat_history.append({"role": "user", "content": user_p})
-        with st.chat_message("user"): st.write(user_p)
-        
-        with st.chat_message("assistant"):
-            with st.spinner("Chuyên gia đang suy nghĩ..."):
-                try:
-                    # Gửi câu hỏi cho Gemini
-                    response = model_gemini.generate_content(user_p)
-                    full_reply = response.text
-                    st.write(full_reply)
-                    st.session_state.chat_history.append({"role": "assistant", "content": full_reply})
-                except Exception as e:
-                    st.error("Dạ, mạng hơi yếu bà con đợi xíu ạ!")
-import streamlit as st
-import google.generativeai as genai
-from inference_sdk import InferenceHTTPClient
-from PIL import Image
-import requests
-from streamlit_js_eval import get_geolocation
-
-# --- CẤU HÌNH ---
-# DÁN API KEY CỦA BẠN VÀO ĐÂY
-GEMINI_KEY = "AIzaSyBFYtJFvAAiR3DqqcNtw1-3gHHe2g-2eXA"
-
-# Khởi tạo Gemini
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
-
-st.set_page_config(page_title="Bác Sĩ Lúa Pro", layout="wide")
-
-# Kiểm tra GPS an toàn để không bị KeyError
-st.subheader("🌦️ Thời Tiết Tại Ruộng")
-loc = get_geolocation()
-if loc and 'coords' in loc:
-    lat = loc['coords'].get('latitude')
-    lon = loc['coords'].get('longitude')
-    if lat and lon:
-        st.success(f"📍 Đã xác định vị trí: {lat}, {lon}")
-        # (Phần gọi API thời tiết ở đây...)
-else:
-    st.info("📌 Bà con vui lòng bấm 'Cho phép' truy cập vị trí để xem thời tiết nhé.")
-
-st.markdown("---")
-
-# --- PHẦN CHAT THÔNG MINH ---
-st.subheader("💬 Trò chuyện cùng Chuyên gia AI")
-if 'chat_history' not in st.session_state:
-    st.session_state['chat_history'] = []
-
-for m in st.session_state.chat_history:
-    with st.chat_message(m["role"]): st.write(m["content"])
-
-if p := st.chat_input("Hỏi gì đi bà con..."):
-    st.session_state.chat_history.append({"role": "user", "content": p})
-    with st.chat_message("user"): st.write(p)
-    
-    with st.chat_message("assistant"):
-        try:
-            # Đây là nơi gọi bộ não Gemini thực sự
-            response = model.generate_content(p)
-            st.write(response.text)
-            st.session_state.chat_history.append({"role": "assistant", "content": response.text})
-        except Exception as e:
-            st.error(f"Lỗi kết nối AI: {e}")
-import streamlit as st
-import google.generativeai as genai
-from inference_sdk import InferenceHTTPClient
-from PIL import Image
-import requests
-from streamlit_js_eval import get_geolocation
+from datetime import datetime
 
 # ==========================================
-# 1. CẤU HÌNH BỘ NÃO AI (GEMINI)
+# 1. CẤU HÌNH HỆ THỐNG & AI
 # ==========================================
-# DÁN MÃ API KEY CỦA BẠN VÀO GIỮA DẤU NGOẶC KÉP DƯỚI ĐÂY
+
+# DÁN MÃ API KEY GEMINI CỦA BẠN VÀO ĐÂY
 API_KEY_GEMINI = "DÁN_MÃ_API_KEY_CỦA_BẠN_VÀO_ĐÂY"
 
+# Cấu hình bộ não Gemini (AI Chat)
 if API_KEY_GEMINI != "AIzaSyBFYtJFvAAiR3DqqcNtw1-3gHHe2g-2eXA":
     genai.configure(api_key=API_KEY_GEMINI)
     model_ai = genai.GenerativeModel('gemini-1.5-flash')
 else:
     model_ai = None
 
-st.set_page_config(page_title="Bác Sĩ Lúa AI", layout="wide")
+# Cấu hình Roboflow (AI Vision) từ dữ liệu của bạn
+ROBO_KEY = "8tf2UvcnEv8h80bV2G0Q"
+MODEL_ID = "rice-leaf-disease-twtlz/1"
+
+st.set_page_config(page_title="Bác Sĩ Lúa AI Pro", layout="wide", page_icon="🌾")
 
 # ==========================================
-# 2. KIỂM TRA GPS AN TOÀN (CHỐNG LỖI KEYERROR)
+# 2. GIAO DIỆN & THỜI TIẾT GPS
 # ==========================================
-st.markdown("<h1 style='color: #2e7d32;'>🌾 BÁC SĨ LÚA AI</h1>", unsafe_allow_html=True)
 
-# Đặt key cố định để tránh lỗi DuplicateElementKey
-loc = get_geolocation(key='gps_fix')
+st.markdown("<h1 style='color: #1b5e20;'>🌾 BÁC SĨ LÚA AI: SIÊU TRỢ LÝ NÔNG NGHIỆP</h1>", unsafe_allow_html=True)
+st.caption("Công nghệ AI 4.0: Chẩn đoán Hình ảnh - Tư vấn Thuốc - Cảnh báo Thời tiết")
 
-st.subheader("🌦️ Thời Tiết Tại Ruộng")
-if loc and 'coords' in loc:
+# Xử lý GPS an toàn để chống lỗi KeyError
+st.subheader("🌦️ Thời Tiết Nông Vụ Tại Chỗ")
+location = get_geolocation(key='gps_ultimate_fix')
+
+if location and 'coords' in location:
     try:
-        lat = loc['coords'].get('latitude')
-        lon = loc['coords'].get('longitude')
-        if lat and lon:
-            st.success(f"📍 Đã xác định vị trí: {lat}, {lon}")
-            w_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m&timezone=auto"
-            res = requests.get(w_url).json()
-            st.metric("🌡️ Nhiệt độ", f"{res['current']['temperature_2m']}°C")
-    except:
-        st.write("Đang lấy dữ liệu thời tiết...")
-else:
-    st.info("📌 Bà con hãy bấm 'Cho phép' (Allow) vị trí để xem thời tiết nhé!")
-
-st.markdown("---")
-
-# ==========================================
-# 3. CHỨC NĂNG CHÍNH (TABS)
-# ==========================================
-t1, t2 = st.tabs(["📸 CHẨN ĐOÁN BỆNH", "💬 HỎI ĐÁP AI"])
-
-with t1:
-    col_l, col_r = st.columns([1, 1.2])
-    with col_l:
-        f = st.file_uploader("Chọn ảnh lá lúa", type=['jpg','png','jpeg'])
-        if f:
-            img = Image.open(f)
-            st.image(img, use_column_width=True)
-            if st.button("🔍 PHÂN TÍCH", type="primary", use_container_width=True):
-                with col_r:
-                    with st.spinner("Đang soi bệnh..."):
-                        img.save("t.jpg")
-                        # Gọi Roboflow (Mắt thần)
-                        client = InferenceHTTPClient(api_url="https://detect.roboflow.com", api_key="8tf2UvcnEv8h80bV2G0Q")
-                        res = client.infer("t.jpg", model_id="rice-leaf-disease-twtlz/1")
-                        preds = res.get('predictions', [])
-                        if preds:
-                            benh = preds[0]['class']
-                            st.error(f"⚠️ Phát hiện: {benh}")
-                            if model_ai:
-                                p = f"Lúa bị bệnh {benh}. Tư vấn tên tiếng Việt và thuốc trị."
-                                st.write(model_ai.generate_content(p).text)
-                        else:
-                            st.success("✅ Cây lúa khỏe mạnh!")
-
-with t2:
-    if 'chat_history' not in st.session_state:
-        st.session_state['chat_history'] = []
-    
-    for m in st.session_state.chat_history:
-        with st.chat_message(m["role"]): st.write(m["content"])
-    
-    if query := st.chat_input("Hỏi tôi về lúa gạo..."):
-        st.session_state.chat_history.append({"role": "user", "content": query})
-        with st.chat_message("user"): st.write(query)
-        
-        with st.chat_message("assistant"):
-            if model_ai:
-                try:
-                    ans = model_ai.generate_content(query).text
-                    st.write(ans)
-                    st.session_state.chat_history.append({"role": "assistant", "content": ans})
-                except:
-                    st.error("Dạ, mạng hơi yếu bà con đợi xíu!")
-            else:
-                st.warning("Bà con chưa dán API Key của Gemini!")
-import streamlit as st
-import google.generativeai as genai
-from inference_sdk import InferenceHTTPClient
-from PIL import Image
-import requests
-from streamlit_js_eval import get_geolocation
-from gtts import gTTS
-from fpdf import FPDF
-from datetime import datetime
-
-# ==========================================
-# 1. CẤU HÌNH BỘ NÃO AI (GEMINI)
-# ==========================================
-# THAY API KEY CỦA BẠN VÀO GIỮA DẤU ""
-API_KEY_GEMINI = "AIzaSyBFYtJFvAAiR3DqqcNtw1-3gHHe2g-2eXA"
-
-# Khởi tạo AI an toàn
-try:
-    genai.configure(api_key=API_KEY_GEMINI)
-    model_ai = genai.GenerativeModel('gemini-1.5-flash')
-except:
-    model_ai = None
-
-st.set_page_config(page_title="Bác Sĩ Lúa AI", layout="wide")
-
-# ==========================================
-# 2. XỬ LÝ GPS AN TOÀN (CHỐNG KEYERROR)
-# ==========================================
-st.markdown("<h1 style='color: #2e7d32;'>🌾 BÁC SĨ LÚA AI</h1>", unsafe_allow_html=True)
-
-# Lấy vị trí với key duy nhất để tránh lỗi DuplicateElementKey
-#
-loc = get_geolocation(key='gps_standard')
-
-st.subheader("🌦️ Dự báo thời tiết")
-# Kiểm tra dữ liệu GPS trước khi truy cập để tránh KeyError
-if loc and 'coords' in loc:
-    try:
-        lat = loc['coords'].get('latitude')
-        lon = loc['coords'].get('longitude')
+        lat = location['coords'].get('latitude')
+        lon = location['coords'].get('longitude')
         if lat and lon:
             w_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m&timezone=auto"
-            res = requests.get(w_url).json()
-            st.success(f"📍 Vị trí: {lat}, {lon}")
-            st.metric("🌡️ Nhiệt độ", f"{res['current']['temperature_2m']}°C")
+            weather = requests.get(w_url).json()
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("🌡️ Nhiệt độ", f"{weather['current']['temperature_2m']}°C")
+            c2.metric("💧 Độ ẩm", f"{weather['current']['relative_humidity_2m']}%")
+            with c3:
+                st.success(f"📍 Vị trí: {round(lat,2)}, {round(lon,2)}")
     except:
-        st.write("Đang kết nối trạm khí tượng...")
+        st.write("Đang tải dữ liệu thời tiết...")
 else:
-    st.info("📌 Bà con vui lòng chọn 'Cho phép' (Allow) vị trí để xem thời tiết.")
+    # Thông báo thay vì báo lỗi đỏ
+    st.info("📍 Đang chờ GPS... Bà con hãy bấm 'Cho phép' (Allow) trên trình duyệt để xem thời tiết tại ruộng nhé.")
 
 st.markdown("---")
 
 # ==========================================
-# 3. CHỨC NĂNG CHÍNH (TABS)
+# 3. CÁC TAB CHỨC NĂNG CHÍNH
 # ==========================================
-t1, t2 = st.tabs(["📸 CHẨN ĐOÁN BỆNH", "💬 HỎI ĐÁP AI"])
 
-with t1:
-    c_l, c_r = st.columns([1, 1.2])
-    with c_l:
-        f = st.file_uploader("Chọn ảnh lá lúa", type=['jpg','png','jpeg'])
-        if f:
-            img = Image.open(f)
-            st.image(img, use_column_width=True)
-            if st.button("🔍 BẮT ĐẦU SOI BỆNH", type="primary", use_container_width=True):
-                with c_r:
-                    with st.spinner("AI đang làm việc..."):
-                        img.save("test.jpg")
-                        # Roboflow API
-                        client = InferenceHTTPClient(api_url="https://detect.roboflow.com", api_key="8tf2UvcnEv8h80bV2G0Q")
-                        res = client.infer("test.jpg", model_id="rice-leaf-disease-twtlz/1")
-                        preds = res.get('predictions', [])
-                        
-                        if preds:
-                            benh = preds[0]['class']
-                            st.error(f"⚠️ Phát hiện: {benh}")
-                            if model_ai:
-                                p = f"Lúa bị bệnh {benh}. Hãy tư vấn thuốc trị cụ thể ở Việt Nam."
-                                st.write(model_ai.generate_content(p).text)
-                        else:
-                            st.success("🌿 Cây lúa khỏe mạnh!")
+tab1, tab2 = st.tabs(["📸 CHẨN ĐOÁN BỆNH QUA ẢNH", "💬 HỎI ĐÁP CHUYÊN GIA AI"])
 
-with t2:
+# --- TAB 1: AI CHẨN ĐOÁN ---
+with tab1:
+    col_l, col_r = st.columns([1, 1.3])
+    with col_l:
+        st.write("### 1. Thu thập hình ảnh")
+        src = st.radio("Chọn nguồn ảnh:", ["Tải ảnh lên", "Chụp bằng Camera"], horizontal=True)
+        img_file = st.camera_input("Chụp mẫu lá") if src == "Chụp bằng Camera" else st.file_uploader("Chọn ảnh từ máy", type=['jpg','png','jpeg'])
+
+    if img_file:
+        img_input = Image.open(img_file)
+        with col_l:
+            st.image(img_input, use_column_width=True, caption="Ảnh mẫu đang soi")
+            if st.button("🔍 BẮT ĐẦU PHÂN TÍCH", type="primary", use_container_width=True):
+                with col_r:
+                    with st.spinner("AI đang soi kính hiển vi..."):
+                        try:
+                            img_input.save("process.jpg")
+                            client = InferenceHTTPClient(api_url="https://detect.roboflow.com", api_key=ROBO_KEY)
+                            result = client.infer("process.jpg", model_id=MODEL_ID)
+                            preds = result.get('predictions', [])
+                            
+                            if isinstance(preds, dict):
+                                preds = [{"class": k, "confidence": v['confidence']} for k, v in preds.items()]
+
+                            if preds:
+                                top_benh = max(preds, key=lambda x: x['confidence'])['class']
+                                st.error(f"### 🚩 CẢNH BÁO: PHÁT HIỆN {top_benh.upper()}")
+                                
+                                if model_ai:
+                                    # Gemini tư vấn chi tiết
+                                    prompt = f"Lá lúa bị bệnh {top_benh}. Hãy cho biết tên tiếng Việt, triệu chứng và các loại thuốc đặc trị phổ biến tại Việt Nam."
+                                    advice = model_ai.generate_content(prompt).text
+                                    st.markdown("#### 📖 Hướng dẫn điều trị:")
+                                    st.write(advice)
+                                    
+                                    # Tạo giọng nói
+                                    gTTS(f"Phát hiện bệnh {top_benh}. Bà con xem hướng dẫn điều trị bên dưới.", lang='vi').save("v.mp3")
+                                    st.audio("v.mp3")
+                                else:
+                                    st.warning("Bạn chưa dán Gemini API Key để nhận tư vấn chi tiết.")
+                            else:
+                                st.success("✅ Cây lúa khỏe mạnh, không phát hiện sâu bệnh!")
+                                st.balloons()
+                        except Exception as e:
+                            st.error(f"Lỗi phân tích: {e}")
+
+# --- TAB 2: CHATBOT THÔNG MINH ---
+with tab2:
+    st.write("### 💬 Trò chuyện cùng Chuyên gia AI")
     if 'chat_history' not in st.session_state:
         st.session_state['chat_history'] = []
-    
-    # Hiển thị hội thoại
-    for m in st.session_state.chat_history:
-        with st.chat_message(m["role"]): st.write(m["content"])
-    
-    if query := st.chat_input("Hỏi tôi về lúa..."):
+
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]): st.write(msg["content"])
+
+    if query := st.chat_input("Hỏi tôi về kỹ thuật lúa gạo..."):
         st.session_state.chat_history.append({"role": "user", "content": query})
         with st.chat_message("user"): st.write(query)
         
         with st.chat_message("assistant"):
             if model_ai:
                 try:
-                    ans = model_ai.generate_content(query).text
-                    st.write(ans)
-                    st.session_state.chat_history.append({"role": "assistant", "content": ans})
+                    response = model_ai.generate_content(query)
+                    reply = response.text
+                    st.write(reply)
+                    st.session_state.chat_history.append({"role": "assistant", "content": reply})
                 except:
-                    st.error("Dạ, mạng hơi yếu bà con đợi xíu!")
+                    # Chống thông báo mạng yếu sai lệch
+                    st.error("Dạ, bộ não AI đang bận tí, bà con thử lại sau nhé!")
             else:
-                st.warning("Bà con chưa dán API Key Gemini vào code!")
+                st.warning("Vui lòng dán Gemini API Key vào code để bắt đầu trò chuyện.")
