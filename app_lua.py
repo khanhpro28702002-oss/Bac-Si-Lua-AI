@@ -149,3 +149,54 @@ with tab_chat:
                     st.session_state.chat_history.append({"role": "assistant", "content": full_reply})
                 except Exception as e:
                     st.error("Dạ, mạng hơi yếu bà con đợi xíu ạ!")
+import streamlit as st
+import google.generativeai as genai
+from inference_sdk import InferenceHTTPClient
+from PIL import Image
+import requests
+from streamlit_js_eval import get_geolocation
+
+# --- CẤU HÌNH ---
+# DÁN API KEY CỦA BẠN VÀO ĐÂY
+GEMINI_KEY = "AIzaSyBFYtJFvAAiR3DqqcNtw1-3gHHe2g-2eXA"
+
+# Khởi tạo Gemini
+genai.configure(api_key=GEMINI_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+st.set_page_config(page_title="Bác Sĩ Lúa Pro", layout="wide")
+
+# Kiểm tra GPS an toàn để không bị KeyError
+st.subheader("🌦️ Thời Tiết Tại Ruộng")
+loc = get_geolocation()
+if loc and 'coords' in loc:
+    lat = loc['coords'].get('latitude')
+    lon = loc['coords'].get('longitude')
+    if lat and lon:
+        st.success(f"📍 Đã xác định vị trí: {lat}, {lon}")
+        # (Phần gọi API thời tiết ở đây...)
+else:
+    st.info("📌 Bà con vui lòng bấm 'Cho phép' truy cập vị trí để xem thời tiết nhé.")
+
+st.markdown("---")
+
+# --- PHẦN CHAT THÔNG MINH ---
+st.subheader("💬 Trò chuyện cùng Chuyên gia AI")
+if 'chat_history' not in st.session_state:
+    st.session_state['chat_history'] = []
+
+for m in st.session_state.chat_history:
+    with st.chat_message(m["role"]): st.write(m["content"])
+
+if p := st.chat_input("Hỏi gì đi bà con..."):
+    st.session_state.chat_history.append({"role": "user", "content": p})
+    with st.chat_message("user"): st.write(p)
+    
+    with st.chat_message("assistant"):
+        try:
+            # Đây là nơi gọi bộ não Gemini thực sự
+            response = model.generate_content(p)
+            st.write(response.text)
+            st.session_state.chat_history.append({"role": "assistant", "content": response.text})
+        except Exception as e:
+            st.error(f"Lỗi kết nối AI: {e}")
