@@ -1378,4 +1378,4 @@ with tab1:
     col_l, col_r = st.columns([1, 1.2])
     
     with col_l:
-        st.subheader("📸 Tải ảnh lá l
+        st.subheader("📸 Tải ảnh lá l)
