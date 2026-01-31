@@ -99,15 +99,35 @@ def lay_thoi_tiet(city="Can Tho", lat=None, lon=None):
     try:
         api_key = "c7debdc7ac4deefb232ab3da884f152d"
         
-        # Quyết định dùng Tọa độ hay Tên thành phố
-        if lat and lon:
-            url = f"http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={api_key}&units=metric&lang=vi"
-            location_desc = f"Vị trí ({lat}, {lon})"
-        else:
-            url = f"http://api.openweathermap.org/data/2.5/weather?q={city},VN&appid={api_key}&units=metric&lang=vi"
+        # 1. Kiểm tra nếu có tọa độ (phải là số hợp lệ)
+        try:
+            if lat and lon:
+                lat_float = float(lat)
+                lon_float = float(lon)
+                url = "http://api.openweathermap.org/data/2.5/weather"
+                params = {
+                    "lat": lat_float,
+                    "lon": lon_float,
+                    "appid": api_key,
+                    "units": metric_units := "metric",
+                    "lang": "vi"
+                }
+                location_desc = f"Tọa độ ({lat}, {lon})"
+            else:
+                raise ValueError("Không có tọa độ")
+        except:
+            # 2. Nếu không có tọa độ, dùng tên thành phố
+            url = "http://api.openweathermap.org/data/2.5/weather"
+            params = {
+                "q": f"{city},VN",
+                "appid": api_key,
+                "units": "metric",
+                "lang": "vi"
+            }
             location_desc = city
             
-        response = requests.get(url, timeout=5)
+        response = requests.get(url, params=params, timeout=5)
+        
         if response.status_code == 200:
             data = response.json()
             return {
@@ -121,11 +141,15 @@ def lay_thoi_tiet(city="Can Tho", lat=None, lon=None):
                 "may": data['clouds']['all'],
                 "nguon": "🌍 Dữ liệu vệ tinh (Live)"
             }
+        elif response.status_code == 404:
+            st.error(f"❌ Không tìm thấy vị trí: {location_desc} (Lỗi 404)")
+        elif response.status_code == 401:
+            st.error("❌ API Key không hợp lệ hoặc đã hết hạn (Lỗi 401)")
         else:
-            # Nếu API trả lỗi (VD: Key hết hạn hoặc sai tọa độ)
             st.error(f"⚠️ API Weather lỗi: {response.status_code}")
+            
     except Exception as e:
-        st.warning(f"⚠️ Không thể kết nối API Weather: {str(e)}")
+        st.warning(f"⚠️ Lỗi kết nối Weather: {str(e)}")
     
     # Dữ liệu mặc định nếu API lỗi
     return {
