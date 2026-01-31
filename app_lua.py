@@ -109,7 +109,7 @@ def lay_thoi_tiet(city="Can Tho", lat=None, lon=None):
                     "lat": lat_float,
                     "lon": lon_float,
                     "appid": api_key,
-                    "units": metric_units := "metric",
+                    "units": "metric",
                     "lang": "vi"
                 }
                 location_desc = f"Tọa độ ({lat}, {lon})"
