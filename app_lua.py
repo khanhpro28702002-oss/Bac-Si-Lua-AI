@@ -40,7 +40,7 @@ def lay_thoi_tiet():
     """Lấy thông tin thời tiết Thanh Hóa từ API OpenWeatherMap"""
     try:
         # API key miễn phí (bạn nên đăng ký key riêng tại openweathermap.org)
-        api_key = "c7debdc7ac4deefb232ab3da884f152d"  # Thay bằng key của bạn
+        api_key = "YOUR_API_KEY_HERE"  # Thay bằng key của bạn
         city = "Thanh Hoa"
         url = f"http://api.openweathermap.org/data/2.5/weather?q={city},VN&appid={api_key}&units=metric&lang=vi"
         
@@ -1372,7 +1372,6 @@ with st.sidebar:
 st.markdown("---")
 
 tab1, tab2, tab3 = st.tabs(["🔍 CHẨN ĐOÁN QUA ẢNH", "💬 CHAT VỚI CHUYÊN GIA", "📋 NHẬT KÝ"])
-
 # --- TAB 1: CHẨN ĐOÁN ---
 with tab1:
     col_l, col_r = st.columns([1, 1.2])
@@ -1535,86 +1534,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- KẾT THÚC CODE ---
-import streamlit as st
-from inferencesdk import InferenceHTTPClient
-from PIL import Image, ImageDraw, ImageFont
-from datetime import datetime
-import requests
-import pandas as pd
-import time
 
-# Cấu hình trang
-st.set_page_config(
-    page_title="Chuyên Gia Bệnh Lúa AI",
-    page_icon="🌾",
-    layout="wide"
-)
 
-# CSS tùy chỉnh giao diện
-st.markdown("""
-<style>
-.main {background-color: #f4f6f9;}
-h1 {color: #1b5e20; text-align: center;}
-.stChatInput {border-radius: 20px;}
-div.stMarkdown h3 {color: #2e7d32; border-bottom: 2px solid #a5d6a7; padding-bottom: 10px;}
-div.stMarkdown h4 {color: #d32f2f; margin-top: 20px;}
-.reportview-container .markdown-text-container {font-family: Arial;}
-.weather-box {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 20px;
-    border-radius: 15px;
-    margin: 10px 0;
-}
-</style>
-""", unsafe_allow_html=True)
 
-# Khởi tạo session state
-if 'history' not in st.session_state:
-    st.session_state.history = []
-if 'chat_messages' not in st.session_state:
-    st.session_state.chat_messages = []
-
-# ==============================================================================
-# 1. HÀM LẤY THÔNG TIN THỜI TIẾT THANH HÓA
-# ==============================================================================
-
-def lay_thoi_tiet():
-    """Lấy thông tin thời tiết Thanh Hóa từ API OpenWeatherMap"""
-    try:
-        # THAY API KEY CỦA BẠN VÀO ĐÂY 👇
-        API_KEY = "c7debdc7ac4deefb232ab3da884f152d"  # Đăng ký: openweathermap.org
-        city = "Thanh Hoa"
-        url = f"http://api.openweathermap.org/data/2.5/weather?q={city},VN&appid={API_KEY}&units=metric&lang=vi"
-        
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            return {
-                'nhiet_do': round(data['main']['temp'], 1),
-                'cam_giac': round(data['main']['feels_like'], 1),
-                'do_am': data['main']['humidity'],
-                'apsuat': data['main']['pressure'],
-                'mo_ta': data['weather'][0]['description'].capitalize(),
-                'gio': round(data['wind']['speed'] * 3.6, 1),  # m/s -> km/h
-                'may': data['clouds']['all']
-            }
-    except:
-        pass
-    
-    # Dữ liệu mặc định nếu API lỗi
-    return {
-        'nhiet_do': 28,
-        'cam_giac': 30,
-        'do_am': 75,
-        'apsuat': 1012,
-        'mo_ta': 'Có mây',
-        'gio': 12,
-        'may': 60
-    }
-
-# ==============================================================================
-# 2. DỮ LIỆU TRỊ THỨC BỆNH HỈNH ẢNH
-# ==============================================================================
-
-KIEN_THUC_BENH 
