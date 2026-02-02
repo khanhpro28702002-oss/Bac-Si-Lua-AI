@@ -6,7 +6,7 @@ import requests
 import pandas as pd
 
 # Cấu hình trang
-st.set_page_config(page_title="Chuẩn đoán bệnh đạo ôn", page_icon="👨‍⚕️", layout="wide")
+st.set_page_config(page_title="Chuẩn đoán bệnh đạo ôn .." , page_icon="👨‍⚕️", layout="wide")
 
 # CSS tùy chỉnh giao diện
 st.markdown("""
