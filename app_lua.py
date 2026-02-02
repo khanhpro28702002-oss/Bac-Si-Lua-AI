@@ -8,21 +8,243 @@ import pandas as pd
 # Cấu hình trang
 st.set_page_config(page_title="Chuẩn đoán bệnh đạo ôn .." , page_icon="👨‍⚕️", layout="wide")
 
-# CSS tùy chỉnh giao diện
+# CSS tùy chỉnh giao diện - UI hiện đại
 st.markdown("""
 <style>
-    .main {background-color: #f4f6f9;}
-    h1 {color: #1b5e20; text-align: center;}
-    .stChatInput {border-radius: 20px;}
-    div.stMarkdown h3 {color: #2e7d32; border-bottom: 2px solid #a5d6a7; padding-bottom: 10px;}
-    div.stMarkdown h4 {color: #d32f2f; margin-top: 20px;}
-    .reportview-container .markdown-text-container {font-family: 'Arial';}
+    /* Cấu hình toàn bộ trang */
+    .main {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        padding: 0;
+    }
+    
+    /* Header chính */
+    h1 {
+        color: #1b5e20;
+        text-align: center;
+        font-size: 2.5em;
+        font-weight: 800;
+        margin-bottom: 10px;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        animation: slideDown 0.6s ease-out;
+    }
+    
+    h2 {
+        color: #2e7d32;
+        font-size: 1.8em;
+        font-weight: 700;
+        margin-top: 30px;
+        margin-bottom: 15px;
+        border-left: 5px solid #4caf50;
+        padding-left: 15px;
+        animation: fadeInLeft 0.5s ease-out;
+    }
+    
+    h3 {
+        color: #2e7d32;
+        font-size: 1.3em;
+        font-weight: 600;
+        margin-top: 20px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #a5d6a7;
+        animation: fadeInLeft 0.5s ease-out 0.1s both;
+    }
+    
+    h4 {
+        color: #d32f2f;
+        font-size: 1.1em;
+        font-weight: 600;
+        margin-top: 18px;
+        padding-left: 12px;
+        border-left: 3px solid #d32f2f;
+    }
+    
+    /* Animations */
+    @keyframes slideDown {
+        from { transform: translateY(-30px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+    }
+    
+    @keyframes fadeInLeft {
+        from { transform: translateX(-20px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: scale(0.95); }
+        to { opacity: 1; transform: scale(1); }
+    }
+    
+    /* Input text */
+    .stChatInput {
+        border-radius: 30px;
+        border: 2px solid #4caf50;
+        box-shadow: 0 4px 15px rgba(76, 175, 80, 0.2);
+        font-size: 16px;
+    }
+    
+    /* Button styling */
+    .stButton > button {
+        background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+        color: white;
+        font-weight: 700;
+        padding: 12px 32px;
+        border-radius: 30px;
+        border: none;
+        box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+        transition: all 0.3s ease;
+        font-size: 16px;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
+        background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%);
+    }
+    
+    .stButton > button:active {
+        transform: translateY(0);
+    }
+    
+    /* Container thông tin */
     .weather-box {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
+        padding: 25px;
+        border-radius: 20px;
+        margin: 20px 0;
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        animation: fadeIn 0.6s ease-out;
+        font-size: 16px;
+        line-height: 1.8;
+    }
+    
+    /* Card styling */
+    .info-card {
+        background: white;
         padding: 20px;
         border-radius: 15px;
-        margin: 10px 0;
+        margin: 15px 0;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        border-left: 4px solid #4caf50;
+        animation: fadeIn 0.5s ease-out;
+    }
+    
+    .warning-card {
+        background: #fff3cd;
+        padding: 18px;
+        border-radius: 12px;
+        margin: 15px 0;
+        border-left: 4px solid #ffc107;
+        color: #856404;
+        animation: fadeIn 0.5s ease-out;
+    }
+    
+    .danger-card {
+        background: #f8d7da;
+        padding: 18px;
+        border-radius: 12px;
+        margin: 15px 0;
+        border-left: 4px solid #dc3545;
+        color: #721c24;
+        animation: fadeIn 0.5s ease-out;
+    }
+    
+    .success-card {
+        background: #d4edda;
+        padding: 18px;
+        border-radius: 12px;
+        margin: 15px 0;
+        border-left: 4px solid #28a745;
+        color: #155724;
+    }
+    
+    /* Text styling */
+    div.stMarkdown {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        line-height: 1.7;
+        color: #333;
+    }
+    
+    /* Link styling */
+    a {
+        color: #2e7d32;
+        font-weight: 600;
+        text-decoration: none;
+        transition: color 0.3s ease;
+    }
+    
+    a:hover {
+        color: #1b5e20;
+        text-decoration: underline;
+    }
+    
+    /* Code block */
+    pre {
+        background: #f5f5f5;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 3px solid #4caf50;
+        overflow-x: auto;
+    }
+    
+    /* Expander/Details */
+    .streamlit-expanderHeader {
+        background-color: #e8f5e9 !important;
+        color: #1b5e20 !important;
+        font-weight: 700 !important;
+        border-radius: 10px !important;
+        padding: 12px !important;
+    }
+    
+    /* Table styling */
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 15px 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    
+    thead {
+        background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+        color: white;
+    }
+    
+    th {
+        padding: 12px;
+        font-weight: 700;
+        text-align: left;
+    }
+    
+    td {
+        padding: 10px 12px;
+        border-bottom: 1px solid #e0e0e0;
+    }
+    
+    tbody tr:hover {
+        background-color: #f5f5f5;
+    }
+    
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: #4caf50;
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: #2e7d32;
     }
 </style>
 """, unsafe_allow_html=True)
