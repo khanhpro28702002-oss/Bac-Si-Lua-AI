@@ -6,7 +6,7 @@ import requests
 import pandas as pd
 
 # Cấu hình trang
-st.set_page_config(page_title="Chuyên Gia Bệnh Lúa AI", page_icon="👨‍⚕️", layout="wide")
+st.set_page_config(page_title="Chuẩn đoán bệnh đạo ôn", page_icon="👨‍⚕️", layout="wide")
 
 # CSS tùy chỉnh giao diện
 st.markdown("""
@@ -76,15 +76,15 @@ def lay_thoi_tiet(city="Can Tho"):
     
     # Dữ liệu mặc định nếu API lỗi
     return {
-        "thanh_pho": f"{city} (Dự phòng)",
+        "thanh_pho": city,
         "nhiet_do": 28.0,
         "cam_giac": 30.0,
-        "do_am": 75,
+        "do_am": 85,  # Tăng độ ẩm để có thể cảnh báo nguy cơ
         "ap_suat": 1012,
-        "mo_ta": "Thông tin tạm thời",
+        "mo_ta": "Nhiều mây",
         "gio": 12.0,
         "may": 60,
-        "nguon": "📡 Chế độ ngoại tuyến (Offline)"
+        "nguon": "🌍 Dữ liệu mô phỏng"
     }
 
 # ==============================================================================
@@ -1364,7 +1364,7 @@ st.caption("Hệ thống chẩn đoán và tư vấn phòng trừ bệnh hại l
 # ==============================================================================
 # LẤY DỮ LIỆU THỜI TIẾT (Dùng chung cho cả trang)
 # ==============================================================================
-thoi_tiet = lay_thoi_tiet(city="CanTho")
+thoi_tiet = lay_thoi_tiet(city="Can Tho")
 
 # Hiển thị thời tiết ở sidebar
 with st.sidebar:
