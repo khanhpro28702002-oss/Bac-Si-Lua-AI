@@ -6,7 +6,7 @@ import requests
 import pandas as pd
 
 # Cấu hình trang
-st.set_page_config(page_title="Chuyên Gia Bệnh Lúa AI", page_icon="🌾", layout="wide")
+st.set_page_config(page_title="Chuyên Gia Bệnh Lúa AI", page_icon="👨‍⚕️", layout="wide")
 
 # CSS tùy chỉnh giao diện
 st.markdown("""
@@ -90,8 +90,7 @@ def lay_thoi_tiet(city="Can Tho"):
 # ==============================================================================
 # 1. CƠ SỞ DỮ LIỆU TRI THỨC BỆNH HẠI (Chi tiết chuyên sâu + Thời tiết)
 # ==============================================================================
-
-KIEN_THUC_BENH = {
+úp  = {
     "đạo ôn": """🔥 **BỆNH ĐẠO ÔN (CHÁY LÁ) - *Pyricularia oryzae***
 
 **I. TÁC NHÂN & ĐIỀU KIỆN THỜI TIẾT:**
