@@ -1358,7 +1358,7 @@ def ve_bbox_voi_confidence(img, predictions):
 # 3. GIAO DIỆN ỨNG DỤNG
 # ==============================================================================
 
-st.markdown("<h1>🌾 Chuẩn Đoán Bệnh Trên Cây Lúa</h1>", unsafe_allow_html=True)
+st.markdown("<h1>Chuẩn Đoán Bệnh Trên Cây Lúa</h1>", unsafe_allow_html=True)
 st.caption("Hệ thống chẩn đoán và tư vấn phòng trừ bệnh hại lúa - Dữ liệu cập nhật 2025 (Không bao gồm sâu hại)")
 
 # ==============================================================================
